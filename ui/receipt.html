@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tempo Agent - Payment Receipt</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;600;700&display=swap');
+
+      :root {
+        --bg-0: #16191f;
+        --bg-1: #1e232d;
+        --panel: rgba(31, 36, 45, 0.82);
+        --line: rgba(255, 255, 255, 0.12);
+        --line-strong: rgba(255, 255, 255, 0.22);
+        --text: #eef1f6;
+        --text-soft: #b0b9c8;
+        --text-dim: #8e99ab;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: 'Manrope', sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 10% 0%, rgba(255, 255, 255, 0.05), transparent 31%),
+          radial-gradient(circle at 89% 7%, rgba(255, 255, 255, 0.035), transparent 30%),
+          linear-gradient(130deg, var(--bg-0), var(--bg-1));
+        padding: 18px;
+      }
+
+      .app {
+        max-width: 1180px;
+        margin: 0 auto;
+        display: grid;
+        gap: 14px;
+      }
+
+      .hero {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px;
+        background: rgba(35, 40, 50, 0.75);
+        display: grid;
+        gap: 10px;
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+
+      .hero p {
+        margin: 0;
+        color: var(--text-soft);
+      }
+
+      .hero-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      button {
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        border-radius: 9px;
+        background: rgba(61, 67, 78, 0.94);
+        color: #eff4fb;
+        padding: 8px 11px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.79rem;
+      }
+
+      button.primary {
+        border-color: rgba(54, 197, 156, 0.56);
+        background: rgba(38, 162, 129, 0.92);
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 12px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .panel h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .muted {
+        color: var(--text-dim);
+        font-size: 0.82rem;
+      }
+
+      .timeline {
+        display: grid;
+        gap: 8px;
+      }
+
+      .step {
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .step.done {
+        border-color: rgba(54, 197, 156, 0.54);
+      }
+
+      .step .pill {
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        padding: 2px 8px;
+        font-family: 'IBM Plex Mono', ui-monospace, monospace;
+        font-size: 0.67rem;
+        color: var(--text-soft);
+      }
+
+      .step.done .pill {
+        border-color: rgba(54, 197, 156, 0.62);
+        color: #d5fff2;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 7px;
+        font-size: 0.82rem;
+      }
+
+      .kv code {
+        font-family: 'IBM Plex Mono', ui-monospace, monospace;
+        color: #d5f1ff;
+        word-break: break-all;
+      }
+
+      pre {
+        margin: 0;
+        max-height: 260px;
+        overflow: auto;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 10px;
+        padding: 9px;
+        background: rgba(20, 23, 30, 0.86);
+        color: #d0ddf1;
+        font-family: 'IBM Plex Mono', ui-monospace, monospace;
+        font-size: 0.73rem;
+        line-height: 1.45;
+      }
+
+      .empty {
+        border: 1px dashed rgba(255, 255, 255, 0.2);
+        border-radius: 10px;
+        padding: 12px;
+        color: var(--text-soft);
+        background: rgba(30, 35, 43, 0.55);
+      }
+
+      a {
+        color: #d6e7ff;
+      }
+
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .kv {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section class="hero">
+        <h1>Payment Proof and Receipt</h1>
+        <p>This page is for your demo recording: it shows checkout progress, payment proof, and raw SDK-style payloads.</p>
+        <div class="hero-actions">
+          <a href="/"><button type="button">Back to chat</button></a>
+          <button id="refreshBtn" type="button" class="primary">Refresh from merchant</button>
+        </div>
+        <p id="lastRefresh" class="muted">Last refresh: waiting...</p>
+      </section>
+
+      <section class="grid">
+        <article class="panel">
+          <h2>Execution Timeline</h2>
+          <div id="timeline" class="timeline"></div>
+
+          <h2>Transaction Snapshot</h2>
+          <div id="snapshot" class="empty">No receipt loaded yet. Complete a checkout on the chat page first.</div>
+        </article>
+
+        <article class="panel">
+          <h2>Merchant Capabilities (SDK Surface)</h2>
+          <pre id="capabilitiesOut">Loading...</pre>
+
+          <h2>Receipt Payload</h2>
+          <pre id="receiptOut">{}</pre>
+
+          <h2>Invoice State</h2>
+          <pre id="invoiceOut">{}</pre>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      const MERCHANT_BASE_URL = '__MERCHANT_BASE_URL__'
+      const TIMELINE = [
+        { id: 'intent', label: 'User intent captured' },
+        { id: 'selection', label: 'Listing selected' },
+        { id: 'invoice', label: 'Invoice issued' },
+        { id: 'approval', label: 'Spend permission approved' },
+        { id: 'payment', label: 'Payment confirmed' },
+      ]
+
+      const state = {
+        receipt: null,
+        invoiceState: null,
+        capabilities: null,
+      }
+
+      const byId = (id) => document.getElementById(id)
+
+      function renderTimeline() {
+        const wrap = byId('timeline')
+        wrap.innerHTML = ''
+
+        const done = new Set()
+        if (state.receipt) {
+          done.add('intent')
+          done.add('selection')
+          done.add('invoice')
+          done.add('approval')
+          if (state.receipt?.confirmation?.status === 'confirmed') {
+            done.add('payment')
+          }
+        }
+
+        for (const step of TIMELINE) {
+          const row = document.createElement('div')
+          row.className = `step ${done.has(step.id) ? 'done' : ''}`
+          row.innerHTML = `<span>${step.label}</span><span class="pill">${done.has(step.id) ? 'done' : 'pending'}</span>`
+          wrap.appendChild(row)
+        }
+      }
+
+      function setJson(targetId, value) {
+        byId(targetId).textContent = JSON.stringify(value ?? {}, null, 2)
+      }
+
+      function renderSnapshot() {
+        const node = byId('snapshot')
+        if (!state.receipt) {
+          node.className = 'empty'
+          node.innerHTML = 'No receipt loaded yet. Complete a checkout on the chat page first.'
+          return
+        }
+
+        node.className = ''
+        const txHash = state.receipt.confirmation?.txHash || 'n/a'
+        const invoiceId = state.receipt.invoice?.invoiceId || 'n/a'
+        const listingTitle = state.receipt.listing?.title || 'n/a'
+        const amount = Number(state.receipt.invoice?.amount || 0) / 1e6
+        const explorer = state.capabilities?.settlement?.explorer || 'https://explore.moderato.tempo.xyz'
+
+        node.innerHTML = `
+          <div class="kv"><span>Listing</span><code>${listingTitle}</code></div>
+          <div class="kv"><span>Invoice ID</span><code>${invoiceId}</code></div>
+          <div class="kv"><span>Amount</span><code>${amount} AlphaUSD</code></div>
+          <div class="kv"><span>Tx Hash</span><code>${txHash}</code></div>
+          <div class="kv"><span>Explorer</span><code><a href="${explorer}/tx/${txHash}" target="_blank" rel="noreferrer">${explorer}/tx/${txHash}</a></code></div>
+        `
+      }
+
+      function loadReceiptFromStorage() {
+        const raw = localStorage.getItem('tempo_demo_receipt')
+        if (!raw) {
+          state.receipt = null
+          return
+        }
+
+        try {
+          state.receipt = JSON.parse(raw)
+        } catch {
+          state.receipt = null
+        }
+      }
+
+      async function fetchCapabilities() {
+        try {
+          const res = await fetch(`${MERCHANT_BASE_URL}/api/capabilities`)
+          const body = await res.json()
+          state.capabilities = body
+          setJson('capabilitiesOut', {
+            standard: body.standard,
+            invoice: body.invoice,
+            settlement: body.settlement,
+            endpoints: body.endpoints,
+          })
+        } catch (error) {
+          setJson('capabilitiesOut', { error: String(error) })
+        }
+      }
+
+      async function fetchInvoiceState() {
+        const invoiceId = state.receipt?.invoice?.invoiceId
+        if (!invoiceId) {
+          state.invoiceState = null
+          setJson('invoiceOut', { info: 'No invoice id available yet' })
+          return
+        }
+
+        try {
+          const res = await fetch(`${MERCHANT_BASE_URL}/api/invoices/${invoiceId}`)
+          const body = await res.json()
+          state.invoiceState = body
+          setJson('invoiceOut', body)
+        } catch (error) {
+          setJson('invoiceOut', { error: String(error) })
+        }
+      }
+
+      async function refreshAll() {
+        loadReceiptFromStorage()
+        await fetchCapabilities()
+        await fetchInvoiceState()
+        setJson('receiptOut', state.receipt)
+        renderTimeline()
+        renderSnapshot()
+        byId('lastRefresh').textContent = `Last refresh: ${new Date().toLocaleTimeString()}`
+      }
+
+      byId('refreshBtn').addEventListener('click', () => {
+        refreshAll()
+      })
+
+      refreshAll()
+      setInterval(refreshAll, 5000)
+    </script>
+  </body>
+</html>

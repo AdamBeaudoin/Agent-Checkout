@@ -1,0 +1,1003 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tempo Agent - Chat Demo</title>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+      :root {
+        --bg-0: #17191d;
+        --bg-1: #1c1f26;
+        --text: #eef1f5;
+        --text-soft: #acb3c0;
+        --text-dim: #8790a0;
+        --line: rgba(255, 255, 255, 0.1);
+        --line-strong: rgba(255, 255, 255, 0.18);
+        --ok: #2fd09e;
+        --warn: #ffcb78;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+      }
+
+      body {
+        font-family: 'Manrope', sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 12% -5%, rgba(255, 255, 255, 0.04), transparent 35%),
+          radial-gradient(circle at 86% 4%, rgba(255, 255, 255, 0.03), transparent 34%),
+          linear-gradient(120deg, #181a1f 0%, var(--bg-1) 55%, var(--bg-0) 100%);
+      }
+
+      .stage {
+        position: relative;
+        min-height: 100vh;
+        max-width: 1160px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      .hero {
+        position: absolute;
+        inset: 33vh 0 auto;
+        text-align: center;
+        font-size: clamp(2rem, 3.2vw, 2.9rem);
+        font-weight: 500;
+        letter-spacing: -0.02em;
+        color: rgba(241, 244, 248, 0.94);
+        transition: opacity 260ms ease, transform 260ms ease;
+      }
+
+      .chat-shell {
+        position: absolute;
+        inset: 82px 0 124px;
+        max-width: 940px;
+        margin: 0 auto;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(14px);
+        transition: opacity 240ms ease, transform 240ms ease;
+      }
+
+      .utility {
+        display: none;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+        gap: 10px;
+      }
+
+      .utility-left,
+      .utility-right {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.72rem;
+        color: var(--text-soft);
+        background: rgba(37, 40, 47, 0.92);
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        display: inline-block;
+        margin-right: 6px;
+        background: #f87171;
+      }
+
+      .dot.ok {
+        background: var(--ok);
+      }
+
+      .feed {
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        background: rgba(32, 35, 42, 0.72);
+        backdrop-filter: blur(7px);
+        padding: 12px;
+        min-height: 100%;
+        overflow: auto;
+        display: grid;
+        align-content: start;
+        gap: 9px;
+      }
+
+      .msg {
+        max-width: 84%;
+        border-radius: 13px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        padding: 9px 10px;
+        line-height: 1.45;
+        font-size: 0.95rem;
+        animation: enter 170ms ease;
+        background: rgba(45, 48, 56, 0.93);
+      }
+
+      .msg.user {
+        justify-self: end;
+        background: rgba(54, 64, 79, 0.92);
+        border-color: rgba(133, 170, 208, 0.36);
+      }
+
+      .msg.system {
+        background: rgba(79, 61, 34, 0.84);
+        border-color: rgba(255, 195, 109, 0.4);
+      }
+
+      .msg small {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--text-dim);
+        font-size: 0.67rem;
+        font-family: 'IBM Plex Mono', ui-monospace, monospace;
+      }
+
+      .thinking {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .thinking i {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #d2dae5;
+        display: inline-block;
+        animation: pulse 1s infinite ease-in-out;
+      }
+
+      .thinking i:nth-child(2) {
+        animation-delay: 0.18s;
+      }
+
+      .thinking i:nth-child(3) {
+        animation-delay: 0.36s;
+      }
+
+      .cards {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .listing {
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        overflow: hidden;
+        background: rgba(39, 42, 49, 0.96);
+      }
+
+      .listing img {
+        width: 100%;
+        height: 132px;
+        object-fit: cover;
+        display: block;
+      }
+
+      .listing-body {
+        padding: 9px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .listing-badge {
+        display: inline-flex;
+        align-items: center;
+        width: fit-content;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        padding: 3px 8px;
+        font-size: 0.66rem;
+        color: rgba(240, 244, 250, 0.92);
+        background: rgba(255, 255, 255, 0.08);
+      }
+
+      .listing-title {
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+
+      .listing-meta {
+        font-size: 0.76rem;
+        color: var(--text-soft);
+      }
+
+      .listing-rating {
+        font-size: 0.74rem;
+        color: rgba(245, 248, 252, 0.92);
+      }
+
+      .listing-price {
+        font-size: 0.78rem;
+        color: rgba(242, 245, 249, 0.95);
+      }
+
+      .listing-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .permission {
+        margin-top: 8px;
+        border: 1px solid rgba(255, 195, 109, 0.45);
+        border-radius: 11px;
+        background: rgba(67, 53, 29, 0.58);
+        padding: 9px;
+        display: grid;
+        gap: 7px;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 126px 1fr;
+        gap: 8px;
+        font-size: 0.8rem;
+      }
+
+      .kv code {
+        color: #edf6ff;
+        font-family: 'IBM Plex Mono', ui-monospace, monospace;
+        word-break: break-all;
+      }
+
+      .composer-wrap {
+        position: absolute;
+        left: 50%;
+        top: 53%;
+        width: min(940px, calc(100% - 34px));
+        transform: translate(-50%, -50%);
+        transition: all 260ms ease;
+      }
+
+      .composer {
+        height: 66px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        background: linear-gradient(90deg, rgba(44, 47, 54, 0.96), rgba(47, 50, 58, 0.95));
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+        display: grid;
+        grid-template-columns: auto auto 1fr auto auto;
+        gap: 8px;
+        align-items: center;
+        padding: 0 8px 0 12px;
+      }
+
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: rgba(235, 239, 245, 0.9);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 1.55rem;
+        line-height: 1;
+      }
+
+      .icon-btn:hover {
+        background: rgba(255, 255, 255, 0.07);
+      }
+
+      .composer-divider {
+        width: 1px;
+        height: 34px;
+        background: rgba(255, 255, 255, 0.19);
+      }
+
+      .composer input {
+        width: 100%;
+        border: none;
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 1.08rem;
+        font-weight: 500;
+        outline: none;
+      }
+
+      .composer input::placeholder {
+        color: rgba(235, 239, 245, 0.62);
+      }
+
+      .mic-btn {
+        color: rgba(244, 247, 251, 0.9);
+      }
+
+      .send-btn {
+        width: 46px;
+        height: 46px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.34);
+        background: #f6f8fb;
+        color: #12151a;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      .send-btn:hover {
+        filter: brightness(1.03);
+      }
+
+      .utility button,
+      .listing-actions button,
+      .permission button {
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 9px;
+        background: rgba(55, 59, 69, 0.9);
+        color: var(--text);
+        padding: 6px 10px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 0.74rem;
+      }
+
+      .utility button.primary,
+      .listing-actions button.primary,
+      .permission button.primary {
+        background: rgba(37, 187, 144, 0.9);
+        color: #f2fffb;
+        border-color: rgba(37, 187, 144, 0.65);
+      }
+
+      .utility button.warn,
+      .listing-actions button.warn,
+      .permission button.warn {
+        background: rgba(142, 102, 37, 0.9);
+        color: #fff6ea;
+        border-color: rgba(255, 195, 109, 0.56);
+      }
+
+      a.link {
+        color: #d8efff;
+      }
+
+      @keyframes enter {
+        from {
+          opacity: 0;
+          transform: translateY(3px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes pulse {
+        0%,
+        80%,
+        100% {
+          transform: scale(0.72);
+          opacity: 0.55;
+        }
+        40% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+
+      body.chat-active .hero {
+        opacity: 0;
+        transform: translateY(-12px);
+        pointer-events: none;
+      }
+
+      body.chat-active .chat-shell {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+
+      body.chat-active .utility {
+        display: flex;
+      }
+
+      body.chat-active .composer-wrap {
+        top: auto;
+        bottom: 22px;
+        transform: translateX(-50%);
+      }
+
+      @media (max-width: 980px) {
+        .stage {
+          padding: 0 12px;
+        }
+
+        .hero {
+          inset: 31vh 0 auto;
+          font-size: clamp(1.7rem, 7vw, 2.5rem);
+        }
+
+        .chat-shell {
+          inset: 66px 0 106px;
+        }
+
+        .cards {
+          grid-template-columns: 1fr;
+        }
+
+        .composer {
+          height: 60px;
+          grid-template-columns: auto auto 1fr auto;
+        }
+
+        .composer .mic-btn {
+          display: none;
+        }
+
+        .composer input {
+          font-size: 1rem;
+        }
+
+        .send-btn {
+          width: 42px;
+          height: 42px;
+        }
+
+        .utility {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .kv {
+          grid-template-columns: 1fr;
+          gap: 4px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="stage">
+      <h1 class="hero">Where should we begin?</h1>
+
+      <section id="chatShell" class="chat-shell">
+        <div class="utility">
+          <div class="utility-left">
+            <span class="pill"><span id="merchantDot" class="dot"></span><span id="merchantStatus">Merchant: checking</span></span>
+            <span class="pill"><span id="guardianDot" class="dot"></span><span id="guardianStatus">Guardian: checking</span></span>
+          </div>
+          <div class="utility-right">
+            <span class="pill"><span id="walletDot" class="dot"></span><span id="walletStatus">Wallet disconnected</span></span>
+            <span class="pill" id="walletBalance">Balance: EUR 320.00</span>
+            <button id="connectBtn" type="button" class="primary">Connect Privy (mock)</button>
+            <button id="topupBtn" type="button" class="warn">Top up EUR 200</button>
+            <a href="/receipt"><button type="button">Receipt Page</button></a>
+          </div>
+        </div>
+        <div id="chatFeed" class="feed"></div>
+      </section>
+
+      <section class="composer-wrap">
+        <div class="composer">
+          <button id="promptBtn" class="icon-btn" type="button" aria-label="Use sample prompt">+</button>
+          <span class="composer-divider" aria-hidden="true"></span>
+          <input id="chatInput" placeholder="Ask anything" />
+          <button id="micBtn" class="icon-btn mic-btn" type="button" aria-label="Voice">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.8" />
+              <path d="M18 11.5a6 6 0 0 1-12 0" stroke="currentColor" stroke-width="1.8" />
+              <path d="M12 17.5V21" stroke="currentColor" stroke-width="1.8" />
+            </svg>
+          </button>
+          <button id="sendBtn" class="send-btn" type="button" aria-label="Send">
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M4 12.1L20 5.6L15.3 18.4L11.2 13.9L4 12.1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" />
+              <path d="M11 14L20 5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const MERCHANT_BASE_URL = '__MERCHANT_BASE_URL__'
+      const GUARDIAN_BASE_URL = '__GUARDIAN_BASE_URL__'
+      const OWNER_ADDRESS = '0x8B7Dc5ade18F0B16A6214a395896e4Ee2e20739d'
+
+      const state = {
+        walletConnected: false,
+        walletBalanceEUR: 320,
+        listings: [],
+        selectedListing: null,
+        pending: 'none',
+        lastInvoice: null,
+      }
+
+      const byId = (id) => document.getElementById(id)
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;')
+      }
+
+      function nowLabel() {
+        return new Date().toLocaleTimeString()
+      }
+
+      function activateChatMode() {
+        if (!document.body.classList.contains('chat-active')) {
+          document.body.classList.add('chat-active')
+        }
+      }
+
+      function appendMessage(role, html) {
+        activateChatMode()
+        const feed = byId('chatFeed')
+        const div = document.createElement('div')
+        div.className = `msg ${role}`
+        const name = role === 'user' ? 'You' : role === 'system' ? 'System' : 'Agent'
+        div.innerHTML = `<small>${name} · ${nowLabel()}</small>${html}`
+        feed.appendChild(div)
+        feed.scrollTop = feed.scrollHeight
+        return div
+      }
+
+      function appendUserText(text) {
+        appendMessage('user', escapeHtml(text))
+      }
+
+      function formatEUR(value) {
+        return `EUR ${Number(value).toFixed(2)}`
+      }
+
+      function setDot(el, ok) {
+        el.classList.toggle('ok', ok)
+      }
+
+      function updateWalletUi() {
+        setDot(byId('walletDot'), state.walletConnected)
+        byId('walletStatus').textContent = state.walletConnected ? 'Wallet connected' : 'Wallet disconnected'
+        byId('walletBalance').textContent = `Balance: ${formatEUR(state.walletBalanceEUR)}`
+      }
+
+      async function api(base, path, options = {}) {
+        const response = await fetch(`${base}${path}`, options)
+        const raw = await response.text()
+        let body
+        try {
+          body = raw ? JSON.parse(raw) : {}
+        } catch {
+          body = { raw }
+        }
+        return { response, body }
+      }
+
+      async function refreshServices() {
+        try {
+          const { response } = await api(MERCHANT_BASE_URL, '/api/capabilities')
+          setDot(byId('merchantDot'), response.ok)
+          byId('merchantStatus').textContent = response.ok ? 'Merchant online' : `Merchant HTTP ${response.status}`
+        } catch {
+          setDot(byId('merchantDot'), false)
+          byId('merchantStatus').textContent = 'Merchant offline'
+        }
+
+        try {
+          const { response, body } = await api(GUARDIAN_BASE_URL, '/api/health')
+          setDot(byId('guardianDot'), response.ok)
+          byId('guardianStatus').textContent = response.ok
+            ? `Guardian online (${body.policyCount} policies)`
+            : `Guardian HTTP ${response.status}`
+        } catch {
+          setDot(byId('guardianDot'), false)
+          byId('guardianStatus').textContent = 'Guardian offline'
+        }
+      }
+
+      function createThinkingMessage() {
+        return appendMessage('agent', 'Thinking <span class="thinking"><i></i><i></i><i></i></span>')
+      }
+
+      async function fetchListings() {
+        const { response, body } = await api(MERCHANT_BASE_URL, '/api/listings')
+        if (!response.ok || !Array.isArray(body)) {
+          throw new Error(`Listing fetch failed (${response.status})`)
+        }
+        state.listings = body.slice(0, 3)
+      }
+
+      function listingCardsHtml(listings) {
+        return `<div class="cards">${listings
+          .map(
+            (listing, idx) => `
+            <div class="listing">
+              <img src="${escapeHtml(listing.imageUrl)}" alt="${escapeHtml(listing.title)}" />
+              <div class="listing-body">
+                ${listing.guestFavorite ? '<span class="listing-badge">Guest favorite</span>' : ''}
+                <div class="listing-title">Option ${idx + 1}: ${escapeHtml(listing.title)}</div>
+                <div class="listing-meta">${escapeHtml(listing.neighborhood)} · ${escapeHtml(listing.description)}</div>
+                <div class="listing-rating">★ ${Number(listing.rating ?? 4.9).toFixed(2)} (${Number(listing.reviews ?? 200)} reviews)</div>
+                <div class="listing-price">Weekend total: EUR ${Number(listing.weekendPriceEUR).toFixed(0)} · ${Number(listing.nights)} nights</div>
+                <div class="listing-actions">
+                  <button type="button" data-action="select-listing" data-id="${escapeHtml(listing.id)}" class="primary">Select option ${idx + 1}</button>
+                  <button type="button" data-action="ask-price" data-id="${escapeHtml(listing.id)}">How much?</button>
+                </div>
+              </div>
+            </div>
+          `,
+          )
+          .join('')}</div>`
+      }
+
+      function permissionCardHtml(listing, invoice) {
+        return `
+          <div class="permission">
+            <strong>Permission check before payment</strong>
+            <div class="kv"><span>Listing</span><code>${escapeHtml(listing.title)}</code></div>
+            <div class="kv"><span>Spend cap asked</span><code>EUR ${Number(listing.weekendPriceEUR).toFixed(0)}</code></div>
+            <div class="kv"><span>Invoice amount</span><code>${Number(invoice.amount) / 1e6} AlphaUSD</code></div>
+            <div class="kv"><span>Recipient</span><code>${escapeHtml(invoice.recipient)}</code></div>
+            <div class="kv"><span>Token</span><code>${escapeHtml(invoice.token)}</code></div>
+            <div class="kv"><span>Invoice ID</span><code>${escapeHtml(invoice.invoiceId)}</code></div>
+            <div class="listing-actions">
+              <button type="button" class="primary" data-action="approve-payment">Approve and pay</button>
+              <button type="button" data-action="cancel-payment">Cancel</button>
+            </div>
+          </div>
+        `
+      }
+
+      function randomTxHash() {
+        const bytes = new Uint8Array(32)
+        crypto.getRandomValues(bytes)
+        return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`
+      }
+
+      function parseIntent(text) {
+        const lower = text.toLowerCase()
+        return {
+          city: lower.includes('berlin') ? 'Berlin' : 'Berlin',
+          dateHint: lower.includes('april') ? 'first weekend in April' : 'your requested dates',
+        }
+      }
+
+      function selectionIndexFromText(lower) {
+        const rules = [
+          { pattern: /\boption\s*(1|1st|first)\b/, index: 0 },
+          { pattern: /\boption\s*(2|2nd|second)\b/, index: 1 },
+          { pattern: /\boption\s*(3|3rd|third)\b/, index: 2 },
+          { pattern: /\b(option|pick|choose|select)\s*(1|1st|first)\b/, index: 0 },
+          { pattern: /\b(option|pick|choose|select)\s*(2|2nd|second)\b/, index: 1 },
+          { pattern: /\b(option|pick|choose|select)\s*(3|3rd|third)\b/, index: 2 },
+          { pattern: /\b(1st|first)\s+one\b/, index: 0 },
+          { pattern: /\b(2nd|second)\s+one\b/, index: 1 },
+          { pattern: /\b(3rd|third)\s+one\b/, index: 2 },
+          { pattern: /\bnumber\s*(1|one)\b/, index: 0 },
+          { pattern: /\bnumber\s*(2|two)\b/, index: 1 },
+          { pattern: /\bnumber\s*(3|three)\b/, index: 2 },
+        ]
+
+        const match = rules.find((rule) => rule.pattern.test(lower))
+        return match ? match.index : null
+      }
+
+      function pricesSummary(listings) {
+        return listings
+          .map((item, idx) => `${idx + 1}) ${item.title}: EUR ${Number(item.weekendPriceEUR).toFixed(0)} weekend total`)
+          .join('<br/>')
+      }
+
+      async function startSearch(text) {
+        const intent = parseIntent(text)
+        const thinking = createThinkingMessage()
+        await new Promise((resolve) => setTimeout(resolve, 1100))
+
+        try {
+          await fetchListings()
+        } catch (error) {
+          thinking.remove()
+          appendMessage('system', `Could not fetch listings: ${escapeHtml(String(error))}`)
+          return
+        }
+
+        thinking.remove()
+        state.selectedListing = state.listings[0] ?? null
+        appendMessage(
+          'agent',
+          `I found 3 options in <strong>${intent.city}</strong> for the <strong>${intent.dateHint}</strong>. I recommend <strong>${escapeHtml(
+            state.selectedListing?.title ?? 'Option 1',
+          )}</strong>, but you can pick any option below.${listingCardsHtml(state.listings)}`,
+        )
+        state.pending = 'choose'
+      }
+
+      function selectListing(listingId) {
+        const listing = state.listings.find((entry) => entry.id === listingId)
+        if (!listing) return
+
+        state.selectedListing = listing
+        appendMessage(
+          'agent',
+          `Great pick. <strong>${escapeHtml(listing.title)}</strong> is EUR ${Number(listing.weekendPriceEUR).toFixed(0)} for the weekend. Say <strong>buy that</strong> when ready.`,
+        )
+      }
+
+      async function createInvoiceForSelection() {
+        if (!state.selectedListing) {
+          appendMessage('agent', 'Pick one of the listings first, then I can buy it.')
+          return null
+        }
+
+        const { response, body } = await api(MERCHANT_BASE_URL, '/api/invoices', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            listingId: state.selectedListing.id,
+            payer: OWNER_ADDRESS,
+          }),
+        })
+
+        if (!response.ok || !body.invoice) {
+          appendMessage('system', `Invoice generation failed (${response.status})`)
+          return null
+        }
+
+        state.lastInvoice = body.invoice
+        return body.invoice
+      }
+
+      async function requestPermissionToPay() {
+        const invoice = await createInvoiceForSelection()
+        if (!invoice || !state.selectedListing) return
+
+        appendMessage(
+          'agent',
+          `Before I execute checkout, please review and approve the spend details.${permissionCardHtml(state.selectedListing, invoice)}`,
+        )
+        state.pending = 'approve'
+      }
+
+      async function executePayment() {
+        if (!state.lastInvoice || !state.selectedListing) {
+          appendMessage('system', 'Missing invoice context.')
+          return
+        }
+
+        if (!state.walletConnected) {
+          appendMessage('agent', 'Please connect your Privy wallet first, then press approve again.')
+          return
+        }
+
+        const spend = Number(state.selectedListing.weekendPriceEUR)
+        if (state.walletBalanceEUR < spend) {
+          appendMessage('agent', `Insufficient wallet balance. Needed EUR ${spend.toFixed(0)}.`)
+          return
+        }
+
+        const thinking = createThinkingMessage()
+        await new Promise((resolve) => setTimeout(resolve, 900))
+
+        const txHash = randomTxHash()
+        const { response, body } = await api(MERCHANT_BASE_URL, '/api/demo/confirm', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-demo-mode': 'true',
+          },
+          body: JSON.stringify({
+            invoiceId: state.lastInvoice.invoiceId,
+            txHash,
+          }),
+        })
+
+        thinking.remove()
+
+        if (!response.ok) {
+          appendMessage('system', `Payment simulation failed (${response.status}).`)
+          return
+        }
+
+        state.walletBalanceEUR -= spend
+        updateWalletUi()
+
+        const receipt = {
+          createdAt: new Date().toISOString(),
+          listing: state.selectedListing,
+          invoice: state.lastInvoice,
+          confirmation: body,
+          wallet: {
+            connected: state.walletConnected,
+            remainingBalanceEUR: state.walletBalanceEUR,
+          },
+        }
+
+        localStorage.setItem('tempo_demo_receipt', JSON.stringify(receipt))
+
+        appendMessage(
+          'agent',
+          `Done. Booking completed and payment confirmed.<br/><br/>Tx: <code>${escapeHtml(body.txHash)}</code><br/>Next: review proof on the receipt page.<br/><br/><a class="link" href="/receipt">Open receipt page</a>`,
+        )
+
+        appendMessage('agent', 'Follow-up: do you want me to send check-in instructions and transit options too?')
+        state.pending = 'followup'
+      }
+
+      function handleFollowup(text) {
+        const lower = text.toLowerCase()
+        if (/\b(yes|sure|ok|do it)\b/.test(lower)) {
+          appendMessage('agent', 'Great. I would ask your arrival time, preferred transport, and check-in flexibility next.')
+          state.pending = 'none'
+          return
+        }
+
+        if (/\b(no|nope|done)\b/.test(lower)) {
+          appendMessage('agent', 'Perfect. Demo flow complete.')
+          state.pending = 'none'
+          return
+        }
+
+        appendMessage('agent', 'Say yes if you want follow-up planning, or no to finish.')
+      }
+
+      async function handleText(text) {
+        appendUserText(text)
+        const lower = text.toLowerCase()
+
+        if (state.pending === 'followup') {
+          handleFollowup(text)
+          return
+        }
+
+        if (state.pending === 'approve') {
+          if (/\b(no|cancel|stop)\b/.test(lower)) {
+            appendMessage('agent', 'Understood. I canceled before payment.')
+            state.pending = 'none'
+            return
+          }
+
+          if (/\b(yes|approve|buy|pay|go ahead)\b/.test(lower)) {
+            await executePayment()
+            return
+          }
+        }
+
+        if (/\bhow much\b/.test(lower) && state.listings.length > 0) {
+          appendMessage('agent', `Here are the current options:<br/>${pricesSummary(state.listings)}`)
+          return
+        }
+
+        if (/\bbuy that\b|\bgo buy\b|\bbook it\b/.test(lower)) {
+          if (!state.selectedListing) {
+            appendMessage('agent', 'Pick a listing first and I will proceed to permission review.')
+            return
+          }
+
+          await requestPermissionToPay()
+          return
+        }
+
+        const selectedIndex = selectionIndexFromText(lower)
+        if (selectedIndex !== null) {
+          const listing = state.listings[selectedIndex]
+          if (listing) {
+            selectListing(listing.id)
+            return
+          }
+        }
+
+        await startSearch(text)
+      }
+
+      async function sendCurrentInput() {
+        const input = byId('chatInput')
+        const text = input.value.trim()
+        if (!text) return
+        input.value = ''
+        await handleText(text)
+      }
+
+      function wireFeedActions() {
+        byId('chatFeed').addEventListener('click', async (event) => {
+          const target = event.target
+          if (!(target instanceof HTMLElement)) return
+
+          const action = target.getAttribute('data-action')
+          if (!action) return
+
+          if (action === 'select-listing') {
+            const id = target.getAttribute('data-id')
+            if (id) selectListing(id)
+            return
+          }
+
+          if (action === 'ask-price') {
+            const id = target.getAttribute('data-id')
+            const listing = state.listings.find((entry) => entry.id === id)
+            if (listing) {
+              appendMessage('agent', `${escapeHtml(listing.title)} is EUR ${Number(listing.weekendPriceEUR).toFixed(0)} total for the weekend.`)
+            }
+            return
+          }
+
+          if (action === 'approve-payment') {
+            await executePayment()
+            return
+          }
+
+          if (action === 'cancel-payment') {
+            appendMessage('agent', 'Payment canceled before checkout.')
+            state.pending = 'none'
+          }
+        })
+      }
+
+      function wireTopbarActions() {
+        byId('connectBtn').addEventListener('click', () => {
+          state.walletConnected = true
+          updateWalletUi()
+          appendMessage('system', 'Privy wallet connected (mock mode).')
+        })
+
+        byId('topupBtn').addEventListener('click', () => {
+          state.walletBalanceEUR += 200
+          updateWalletUi()
+          appendMessage('system', 'Wallet topped up by EUR 200 via card (simulated).')
+        })
+      }
+
+      function wireComposerActions() {
+        byId('sendBtn').addEventListener('click', () => {
+          sendCurrentInput().catch((error) => appendMessage('system', `Error: ${escapeHtml(String(error))}`))
+        })
+
+        byId('chatInput').addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            sendCurrentInput().catch((error) => appendMessage('system', `Error: ${escapeHtml(String(error))}`))
+          }
+        })
+
+        byId('promptBtn').addEventListener('click', () => {
+          byId('chatInput').value = 'I would like to go to Berlin for April 1st. Can you find an Airbnb for me?'
+        })
+
+        byId('micBtn').addEventListener('click', () => {
+          appendMessage('system', 'Voice capture is mock-only in this build. Type your prompt and press Enter.')
+        })
+      }
+
+      function boot() {
+        updateWalletUi()
+        refreshServices()
+        wireTopbarActions()
+        wireComposerActions()
+        wireFeedActions()
+        byId('chatInput').focus()
+      }
+
+      boot()
+    </script>
+  </body>
+</html>
