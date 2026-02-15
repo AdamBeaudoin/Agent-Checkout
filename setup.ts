@@ -1,6 +1,7 @@
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts'
 import { Account } from 'viem/tempo'
-import { createTempoWalletClient, createTempoPublicClient, ALPHA_USD } from './shared/config.js'
+import { createTempoWalletClient, createTempoPublicClient } from './shared/config.js'
+import { ALPHA_USD } from './shared/constants.js'
 import fs from 'fs'
 import { randomBytes } from 'crypto'
 

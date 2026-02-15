@@ -6,12 +6,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import {
-  createTempoPublicClient,
-  ALPHA_USD,
-  EXPLORER_URL,
-  CHAIN_ID,
-} from '../shared/config.js'
+import { ALPHA_USD, EXPLORER_URL, CHAIN_ID } from '../shared/constants.js'
 import {
   INVOICE_V1_JSON_SCHEMA,
   type InvoiceLineItemV1,
@@ -990,6 +985,9 @@ async function confirmSettlement(
     )
   }
 
+  // Lazy-load the Tempo RPC client only when settlement confirmation is requested.
+  // This keeps the serverless function cold-start fast for UI + listing/invoice routes.
+  const { createTempoPublicClient } = await import('../shared/config.js')
   const publicClient = createTempoPublicClient()
 
   try {

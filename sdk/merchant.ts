@@ -1,7 +1,6 @@
 import { isAddress, parseEventLogs } from 'viem'
 import type { Log } from 'viem'
 import type { LocalAccount } from 'viem/accounts'
-import { Abis } from 'viem/tempo'
 import {
   INVOICE_VERSION,
   INVOICE_V1_JSON_SCHEMA,
@@ -15,6 +14,22 @@ import {
 } from '../shared/invoice.js'
 
 export const MERCHANT_STANDARD_VERSION = 'tempo.agent-payments.v1' as const
+
+// Minimal ABI fragment for the Tempo TIP-20 `TransferWithMemo` event.
+// Keeping this inline avoids importing heavier chain-specific ABI bundles during serverless cold start.
+const TIP20_TRANSFER_WITH_MEMO_ABI = [
+  {
+    type: 'event',
+    name: 'TransferWithMemo',
+    inputs: [
+      { indexed: true, name: 'from', type: 'address' },
+      { indexed: true, name: 'to', type: 'address' },
+      { indexed: false, name: 'amount', type: 'uint256' },
+      { indexed: false, name: 'memo', type: 'bytes32' },
+    ],
+    anonymous: false,
+  },
+] as const
 
 export type MerchantSdkConfig = {
   baseUrl: string
@@ -188,7 +203,7 @@ export class TempoMerchantSdk {
 
   matchSettlement(invoice: InvoiceV1, logs: readonly Log[]) {
     const transferLogs = parseEventLogs({
-      abi: Abis.tip20,
+      abi: TIP20_TRANSFER_WITH_MEMO_ABI,
       logs: [...logs],
       eventName: 'TransferWithMemo',
     })

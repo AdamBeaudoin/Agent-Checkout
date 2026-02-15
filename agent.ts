@@ -1,4 +1,5 @@
-import { createTempoPublicClient, ALPHA_USD, EXPLORER_URL, CHAIN_ID } from './shared/config.js'
+import { createTempoPublicClient } from './shared/config.js'
+import { ALPHA_USD, EXPLORER_URL, CHAIN_ID } from './shared/constants.js'
 import { createWalletClient, http } from 'viem'
 import { tempoModerato } from 'viem/chains'
 import { Account, tempoActions } from 'viem/tempo'
