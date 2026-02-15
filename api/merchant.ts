@@ -596,7 +596,7 @@ export default async function handler(req: any, res: any) {
       return handleInvoices(req, res, baseUrl)
     }
 
-    const invoiceMatch = pathname.match(/^\\/api\\/invoices\\/([^/]+)$/)
+    const invoiceMatch = pathname.match(/^\/api\/invoices\/([^/]+)$/)
     if (invoiceMatch) {
       return handleInvoiceLookup(req, res, invoiceMatch[1]!)
     }
