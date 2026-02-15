@@ -25,8 +25,10 @@ import 'dotenv/config'
 
 const app = new Hono()
 
-const MERCHANT_ADDRESS = process.env.MERCHANT_ADDRESS as `0x${string}`
-const MERCHANT_PRIVATE_KEY = process.env.MERCHANT_PRIVATE_KEY as `0x${string}`
+const MERCHANT_ADDRESS_ENV = process.env.MERCHANT_ADDRESS
+const MERCHANT_ADDRESS = (MERCHANT_ADDRESS_ENV ??
+  '0x0000000000000000000000000000000000000000') as `0x${string}`
+const MERCHANT_PRIVATE_KEY = process.env.MERCHANT_PRIVATE_KEY as `0x${string}` | undefined
 const MERCHANT_BASE_URL = process.env.MERCHANT_BASE_URL ?? 'http://localhost:3000'
 const MERCHANT_STATE_PATH = process.env.MERCHANT_STATE_PATH ?? './data/merchant-state.json'
 const MERCHANT_CONFIRM_TOKEN = process.env.MERCHANT_CONFIRM_TOKEN?.trim()
@@ -47,6 +49,7 @@ const CHAT_UI_PATH = path.join(UI_DIR, 'chat.html')
 const RECEIPT_UI_PATH = path.join(UI_DIR, 'receipt.html')
 const IS_VERCEL_RUNTIME = process.env.VERCEL === '1' || process.env.VERCEL === 'true'
 const EXPLICIT_MERCHANT_BASE_URL = process.env.MERCHANT_BASE_URL?.trim()
+const SHOULD_BOOT_LOCAL_SERVER = !IS_VERCEL_RUNTIME && process.env.NODE_ENV !== 'production'
 
 function parsePositiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -65,11 +68,6 @@ const settlementRateLimiter = new InMemoryRateLimiter({
   maxRequests: parsePositiveIntegerEnv('MERCHANT_CONFIRM_RATE_LIMIT_MAX', 30),
   windowMs: parsePositiveIntegerEnv('MERCHANT_CONFIRM_RATE_LIMIT_WINDOW_MS', 60_000),
 })
-
-if (!MERCHANT_ADDRESS || !MERCHANT_PRIVATE_KEY) {
-  console.error('Missing MERCHANT_ADDRESS or MERCHANT_PRIVATE_KEY in .env. Run setup.ts first.')
-  process.exit(1)
-}
 
 function setCorsHeaders(c: Context) {
   c.header('Access-Control-Allow-Origin', '*')
@@ -91,22 +89,41 @@ app.use('*', async (c, next) => {
   setCorsHeaders(c)
 })
 
-const merchantSigner = privateKeyToAccount(MERCHANT_PRIVATE_KEY)
-if (merchantSigner.address.toLowerCase() !== MERCHANT_ADDRESS.toLowerCase()) {
-  console.error('MERCHANT_PRIVATE_KEY does not match MERCHANT_ADDRESS.')
-  process.exit(1)
+let merchantConfigError: string | null = null
+let merchantSdk: TempoMerchantSdk | null = null
+
+if (!MERCHANT_ADDRESS_ENV || !MERCHANT_PRIVATE_KEY) {
+  merchantConfigError = 'Missing MERCHANT_ADDRESS or MERCHANT_PRIVATE_KEY environment variables.'
+} else {
+  try {
+    const merchantSigner = privateKeyToAccount(MERCHANT_PRIVATE_KEY)
+    if (merchantSigner.address.toLowerCase() !== MERCHANT_ADDRESS.toLowerCase()) {
+      merchantConfigError = 'MERCHANT_PRIVATE_KEY does not match MERCHANT_ADDRESS.'
+    } else {
+      merchantSdk = new TempoMerchantSdk({
+        baseUrl: MERCHANT_BASE_URL,
+        chainId: CHAIN_ID,
+        defaultRecipient: MERCHANT_ADDRESS,
+        defaultToken: ALPHA_USD,
+        explorerUrl: EXPLORER_URL,
+        merchantAddress: MERCHANT_ADDRESS,
+        merchantName: 'Tempo Agent Checkout Demo Merchant',
+        signer: merchantSigner,
+      })
+    }
+  } catch (error) {
+    merchantConfigError = `Invalid merchant key configuration: ${
+      error instanceof Error ? error.message : 'unknown error'
+    }`
+  }
 }
 
-const merchantSdk = new TempoMerchantSdk({
-  baseUrl: MERCHANT_BASE_URL,
-  chainId: CHAIN_ID,
-  defaultRecipient: MERCHANT_ADDRESS,
-  defaultToken: ALPHA_USD,
-  explorerUrl: EXPLORER_URL,
-  merchantAddress: MERCHANT_ADDRESS,
-  merchantName: 'Tempo Agent Checkout Demo Merchant',
-  signer: merchantSigner,
-})
+if (merchantConfigError) {
+  console.error(merchantConfigError)
+  if (SHOULD_BOOT_LOCAL_SERVER) {
+    process.exit(1)
+  }
+}
 
 type Listing = {
   id: string
@@ -603,6 +620,10 @@ function resolveInvoiceInput(
 }
 
 async function issueInvoice(input: ResolvedInvoiceInput, payer?: `0x${string}`) {
+  if (!merchantSdk) {
+    throw new Error('Merchant service is not configured. Set MERCHANT_ADDRESS and MERCHANT_PRIVATE_KEY.')
+  }
+
   const invoice = await merchantSdk.createInvoice({
     amount: input.amount,
     description: input.description,
@@ -626,6 +647,57 @@ async function issueInvoice(input: ResolvedInvoiceInput, payer?: `0x${string}`) 
 }
 
 function buildCapabilities() {
+  if (!merchantSdk) {
+    return {
+      standard: MERCHANT_STANDARD_VERSION,
+      merchant: {
+        address: MERCHANT_ADDRESS,
+        name: 'Tempo Agent Checkout Demo Merchant',
+      },
+      invoice: {
+        version: 'tempo.invoice.v1',
+        mode: 'generic',
+        schema: '',
+        signature: 'eip191.personal_sign',
+        requiredFields: INVOICE_V1_JSON_SCHEMA.required ?? [],
+        createRequest: {
+          required: ['amount', 'description'],
+          optional: [
+            'recipient',
+            'token',
+            'payer',
+            'dueAt',
+            'dueInSeconds',
+            'merchantReference',
+            'purpose',
+            'lineItems',
+            'metadata',
+            'listingId',
+          ],
+        },
+      },
+      network: {
+        chainId: CHAIN_ID,
+        settlementToken: ALPHA_USD,
+      },
+      settlement: {
+        event: 'TransferWithMemo',
+        requiredMatches: ['token', 'to', 'amount', 'memo', 'payer?'],
+        explorer: EXPLORER_URL,
+      },
+      endpoints: {
+        createInvoice: '',
+        getInvoice: '',
+        confirmSettlement: '',
+        listOfferings: '',
+      },
+      idempotency: {
+        createInvoiceHeader: 'Idempotency-Key',
+      },
+      error: merchantConfigError ?? 'Merchant config unavailable',
+    }
+  }
+
   const capabilities = merchantSdk.buildCapabilities({
     confirmSettlementPath: '/api/confirm',
     createInvoicePath: '/api/invoices',
@@ -788,11 +860,13 @@ app.post('/api/invoices', async (c) => {
   try {
     invoice = await issueInvoice(resolved, payer)
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not create invoice'
+    const isConfigError = /not configured/i.test(message)
     return errorResponse(
       c,
-      400,
-      'INVALID_INVOICE_INPUT',
-      error instanceof Error ? error.message : 'Could not create invoice',
+      isConfigError ? 500 : 400,
+      isConfigError ? 'MERCHANT_NOT_CONFIGURED' : 'INVALID_INVOICE_INPUT',
+      message,
     )
   }
 
@@ -840,9 +914,11 @@ app.post('/api/checkout', async (c) => {
   try {
     invoice = await issueInvoice(resolveResult.value, payer)
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Could not create invoice'
+    const status = /not configured/i.test(message) ? 500 : 400
     return c.json(
-      { error: error instanceof Error ? error.message : 'Could not create invoice' },
-      400,
+      { error: message },
+      status,
     )
   }
 
@@ -921,6 +997,15 @@ async function confirmSettlement(
 
     if (receipt.status !== 'success') {
       return errorResponse(c, 400, 'TRANSACTION_FAILED', 'Transaction failed')
+    }
+
+    if (!merchantSdk) {
+      return errorResponse(
+        c,
+        500,
+        'MERCHANT_NOT_CONFIGURED',
+        'Merchant service is not configured. Set MERCHANT_ADDRESS and MERCHANT_PRIVATE_KEY.',
+      )
     }
 
     const match = merchantSdk.matchSettlement(order.invoice, receipt.logs)
@@ -1081,7 +1166,7 @@ app.get('/api/order/:orderId', (c) => {
 
 const port = Number(process.env.MERCHANT_PORT ?? 3000)
 
-if (!IS_VERCEL_RUNTIME) {
+if (SHOULD_BOOT_LOCAL_SERVER) {
   console.log(`Merchant listening on http://localhost:${port}`)
   console.log(`Payments go to ${MERCHANT_ADDRESS}`)
   if (MERCHANT_CONFIRM_TOKEN) {
