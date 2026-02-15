@@ -568,14 +568,14 @@
           </div>
           <div class="utility-right">
             <span class="pill"><span id="walletDot" class="dot"></span><span id="walletStatus">Wallet disconnected</span></span>
-            <span class="pill" id="walletBalance">Balance: EUR 320.00</span>
+            <span class="pill" id="walletBalance">Balance: 320 AlphaUSD</span>
             <a class="control-link" href="/receipt" target="_blank" rel="noreferrer"><button type="button">Open Receipt</button></a>
             <button id="walletControlsBtn" type="button">Wallet controls</button>
           </div>
         </div>
         <div id="walletControlsPanel" class="controls-panel">
           <button id="connectBtn" type="button" class="primary">Connect Privy (mock)</button>
-          <button id="topupBtn" type="button" class="warn">Top up EUR 200</button>
+          <button id="topupBtn" type="button" class="warn">Top up 200 AlphaUSD</button>
         </div>
         <div id="chatFeed" class="feed"></div>
       </section>
@@ -653,8 +653,8 @@
         appendMessage('user', escapeHtml(text))
       }
 
-      function formatEUR(value) {
-        return `EUR ${Number(value).toFixed(2)}`
+      function formatBalance(value) {
+        return `${Number(value).toFixed(0)} AlphaUSD`
       }
 
       function nightLabel(nights) {
@@ -669,7 +669,7 @@
       function updateWalletUi() {
         setDot(byId('walletDot'), state.walletConnected)
         byId('walletStatus').textContent = state.walletConnected ? 'Wallet connected' : 'Wallet disconnected'
-        byId('walletBalance').textContent = `Balance: ${formatEUR(state.walletBalanceEUR)}`
+        byId('walletBalance').textContent = `Balance: ${formatBalance(state.walletBalanceEUR)}`
       }
 
       async function api(base, path, options = {}) {
@@ -729,7 +729,7 @@
                 <div class="listing-title">Option ${idx + 1}: ${escapeHtml(listing.title)}</div>
                 <div class="listing-meta">${escapeHtml(listing.neighborhood)} · ${escapeHtml(listing.description)}</div>
                 <div class="listing-rating">★ ${Number(listing.rating ?? 4.9).toFixed(2)} (${Number(listing.reviews ?? 200)} reviews)</div>
-                <div class="listing-price">Weekend total: EUR ${Number(listing.weekendPriceEUR).toFixed(0)} · ${nightLabel(listing.nights)}</div>
+                <div class="listing-price">Weekend total: ${Number(listing.weekendPriceEUR).toFixed(0)} AlphaUSD · ${nightLabel(listing.nights)}</div>
                 <div class="listing-meta">Reply in chat: <strong>option ${idx + 1}</strong></div>
               </div>
             </div>
@@ -738,15 +738,24 @@
           .join('')}</div>`
       }
 
+      function truncateAddress(addr) {
+        if (!addr || addr.length < 12) return addr
+        return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+      }
+
       function permissionCardHtml(listing, invoice) {
+        const merchantName = invoice.metadata?.listingTitle
+          ? `Airbnb Host (${escapeHtml(invoice.metadata.listingTitle)})`
+          : 'Airbnb Host'
+        const explorerLink = `https://explore.moderato.tempo.xyz/address/${invoice.recipient}`
+
         return `
           <div class="permission">
             <strong>Permission check before payment</strong>
             <div class="kv"><span>Listing</span><code>${escapeHtml(listing.title)}</code></div>
-            <div class="kv"><span>Spend cap asked</span><code>EUR ${Number(listing.weekendPriceEUR).toFixed(0)}</code></div>
-            <div class="kv"><span>Invoice amount</span><code>${Number(invoice.amount) / 1e6} AlphaUSD</code></div>
-            <div class="kv"><span>Recipient</span><code>${escapeHtml(invoice.recipient)}</code></div>
-            <div class="kv"><span>Token</span><code>${escapeHtml(invoice.token)}</code></div>
+            <div class="kv"><span>Pay to</span><code>${merchantName} <a class="link" href="${explorerLink}" target="_blank" rel="noreferrer">${truncateAddress(invoice.recipient)}</a></code></div>
+            <div class="kv"><span>Amount</span><code>${Number(invoice.amount) / 1e6} AlphaUSD</code></div>
+            <div class="kv"><span>Network</span><code>Tempo Moderato (testnet)</code></div>
             <div class="kv"><span>Invoice ID</span><code>${escapeHtml(invoice.invoiceId)}</code></div>
             <div class="listing-actions">
               <button type="button" class="primary" data-action="approve-payment">Approve and pay</button>
@@ -792,7 +801,7 @@
 
       function pricesSummary(listings) {
         return listings
-          .map((item, idx) => `${idx + 1}) ${item.title}: EUR ${Number(item.weekendPriceEUR).toFixed(0)} weekend total`)
+          .map((item, idx) => `${idx + 1}) ${item.title}: ${Number(item.weekendPriceEUR).toFixed(0)} AlphaUSD weekend total`)
           .join('<br/>')
       }
 
@@ -827,7 +836,7 @@
         state.selectedListing = listing
         appendMessage(
           'agent',
-          `Great pick. <strong>${escapeHtml(listing.title)}</strong> is EUR ${Number(listing.weekendPriceEUR).toFixed(0)} for the weekend. Say <strong>buy that</strong> when ready.`,
+          `Great pick. <strong>${escapeHtml(listing.title)}</strong> is ${Number(listing.weekendPriceEUR).toFixed(0)} AlphaUSD for the weekend. Say <strong>buy that</strong> when ready.`,
         )
       }
 
@@ -883,7 +892,7 @@
 
         const spend = Number(state.selectedListing.weekendPriceEUR)
         if (state.walletBalanceEUR < spend) {
-          appendMessage('agent', `Insufficient wallet balance. Needed EUR ${spend.toFixed(0)}.`)
+          appendMessage('agent', `Insufficient wallet balance. Need ${spend.toFixed(0)} AlphaUSD.`)
           return
         }
 
@@ -1045,7 +1054,7 @@
           state.walletBalanceEUR += 200
           updateWalletUi()
           byId('walletControlsPanel').classList.remove('open')
-          appendMessage('system', 'Wallet topped up by EUR 200 via card (simulated).')
+          appendMessage('system', 'Wallet topped up by 200 AlphaUSD (simulated).')
         })
       }
 
