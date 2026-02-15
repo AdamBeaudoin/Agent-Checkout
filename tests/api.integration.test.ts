@@ -6,6 +6,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
+import { randomBytes } from 'node:crypto'
+import { privateKeyToAccount } from 'viem/accounts'
 
 type RunningService = {
   name: string
@@ -20,9 +22,13 @@ type RunningService = {
 const PROJECT_ROOT = path.resolve(path.join(import.meta.dirname, '..'))
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const ownerAddress = '0x8B7Dc5ade18F0B16A6214a395896e4Ee2e20739d'
-const merchantPrivateKey =
-  '0x0000000000000000000000000000000000000000000000000000000000000001'
-const merchantAddress = '0x9ced683Ce51f85BA7e46BF37D543746ad78F5edB'
+
+function randomPrivateKey(): `0x${string}` {
+  return `0x${randomBytes(32).toString('hex')}` as `0x${string}`
+}
+
+const merchantPrivateKey = randomPrivateKey()
+const merchantAddress = privateKeyToAccount(merchantPrivateKey).address
 
 function createFakeTxHash(fill: string) {
   return `0x${fill.repeat(64)}`

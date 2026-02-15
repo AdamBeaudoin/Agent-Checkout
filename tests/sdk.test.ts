@@ -1,9 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { privateKeyToAccount } from 'viem/accounts'
 import { TempoMerchantSdk } from '../sdk/merchant.js'
 
-const signer = privateKeyToAccount('0x0000000000000000000000000000000000000000000000000000000000000001')
+function randomPrivateKey(): `0x${string}` {
+  return `0x${randomBytes(32).toString('hex')}` as `0x${string}`
+}
+
+const signer = privateKeyToAccount(randomPrivateKey())
 
 const sdk = new TempoMerchantSdk({
   baseUrl: 'http://localhost:3000',
