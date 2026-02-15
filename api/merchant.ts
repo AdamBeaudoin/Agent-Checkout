@@ -1,5 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
-
 // NOTE: Keep this file self-contained for Vercel. Importing local TS modules using `.js`
 // specifiers can cause runtime failures in Vercel's Node function environment.
 const ALPHA_USD = '0x20c0000000000000000000000000000000000001' as const
@@ -156,7 +154,7 @@ function createInvoiceMessage(invoice: Omit<InvoiceV1, 'merchantSig'>): string {
   ].join('|')
 }
 
-function setCors(res: VercelResponse) {
+function setCors(res: any) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader(
     'Access-Control-Allow-Headers',
@@ -165,16 +163,16 @@ function setCors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
 }
 
-function json(res: VercelResponse, status: number, body: unknown) {
+function json(res: any, status: number, body: unknown) {
   setCors(res)
   res.status(status).json(body)
 }
 
-function badMethod(res: VercelResponse) {
+function badMethod(res: any) {
   return json(res, 405, { ok: false, error: 'METHOD_NOT_ALLOWED' })
 }
 
-function originFromReq(req: VercelRequest) {
+function originFromReq(req: any) {
   const proto = (req.headers['x-forwarded-proto'] as string | undefined) ?? 'https'
   const host = (req.headers.host as string | undefined) ?? 'localhost'
   return `${proto}://${host}`
@@ -248,7 +246,7 @@ function hashRequest(payload: unknown): string {
   }
 }
 
-async function readJsonBody(req: VercelRequest) {
+async function readJsonBody(req: any) {
   if (!req.body) return undefined
   // Vercel may already parse JSON into an object.
   if (typeof req.body === 'object') return req.body as unknown
@@ -330,7 +328,7 @@ function capabilitiesJson(baseUrl: string) {
   }
 }
 
-async function handleInvoices(req: VercelRequest, res: VercelResponse, baseUrl: string) {
+async function handleInvoices(req: any, res: any, baseUrl: string) {
   const { orders, idem } = store()
 
   if (req.method !== 'POST') return badMethod(res)
@@ -445,7 +443,7 @@ async function handleInvoices(req: VercelRequest, res: VercelResponse, baseUrl: 
   })
 }
 
-async function handleInvoiceLookup(req: VercelRequest, res: VercelResponse, invoiceId: string) {
+async function handleInvoiceLookup(req: any, res: any, invoiceId: string) {
   const { orders } = store()
   if (req.method !== 'GET') return badMethod(res)
 
@@ -461,7 +459,7 @@ async function handleInvoiceLookup(req: VercelRequest, res: VercelResponse, invo
   })
 }
 
-async function handleDemoConfirm(req: VercelRequest, res: VercelResponse) {
+async function handleDemoConfirm(req: any, res: any) {
   const allowDemo =
     process.env.ALLOW_DEMO_CONFIRM !== undefined
       ? process.env.ALLOW_DEMO_CONFIRM === 'true'
@@ -516,7 +514,7 @@ async function handleDemoConfirm(req: VercelRequest, res: VercelResponse) {
   })
 }
 
-async function handleSchema(req: VercelRequest, res: VercelResponse) {
+async function handleSchema(req: any, res: any) {
   if (req.method !== 'GET') return badMethod(res)
   // Minimal schema for agents to validate shape quickly (MVP).
   return json(res, 200, {
@@ -560,60 +558,66 @@ async function handleSchema(req: VercelRequest, res: VercelResponse) {
   })
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
-  setCors(res)
-  if (req.method === 'OPTIONS') return res.status(204).send('')
+export default async function handler(req: any, res: any) {
+  try {
+    setCors(res)
+    if (req.method === 'OPTIONS') return res.status(204).send('')
 
-  const baseUrl = originFromReq(req)
-  const url = new URL(req.url ?? '/', baseUrl)
-  const pathname = url.pathname
+    const baseUrl = originFromReq(req)
+    const url = new URL(req.url ?? '/', baseUrl)
+    const pathname = url.pathname
 
-  // Health used by the demo UI (merchant + guardian dots).
-  if (pathname === '/api/health') {
-    if (req.method !== 'GET') return badMethod(res)
-    return json(res, 200, { ok: true, policyCount: 1, mode: 'vercel-functions' })
+    // Health used by the demo UI (merchant + guardian dots).
+    if (pathname === '/api/health') {
+      if (req.method !== 'GET') return badMethod(res)
+      return json(res, 200, { ok: true, policyCount: 1, mode: 'vercel-functions' })
+    }
+
+    if (pathname === '/api/capabilities') {
+      if (req.method !== 'GET') return badMethod(res)
+      return json(res, 200, capabilitiesJson(baseUrl))
+    }
+
+    if (pathname === '/.well-known/tempo-agent-payments.json') {
+      if (req.method !== 'GET') return badMethod(res)
+      return json(res, 200, capabilitiesJson(baseUrl))
+    }
+
+    if (pathname === '/api/listings') {
+      if (req.method !== 'GET') return badMethod(res)
+      return json(res, 200, LISTINGS)
+    }
+
+    if (pathname === '/api/schemas/invoice-v1') {
+      return handleSchema(req, res)
+    }
+
+    if (pathname === '/api/invoices') {
+      return handleInvoices(req, res, baseUrl)
+    }
+
+    const invoiceMatch = pathname.match(/^\\/api\\/invoices\\/([^/]+)$/)
+    if (invoiceMatch) {
+      return handleInvoiceLookup(req, res, invoiceMatch[1]!)
+    }
+
+    if (pathname === '/api/demo/confirm') {
+      return handleDemoConfirm(req, res)
+    }
+
+    // Keep the standard endpoint present even for demo-only deployments.
+    if (pathname === '/api/confirm' || pathname === '/api/settlements/confirm') {
+      return json(res, 501, {
+        ok: false,
+        code: 'CONFIRM_NOT_IMPLEMENTED_ON_VERCEL',
+        message: 'Use /api/demo/confirm for the hackathon demo deployment.',
+      })
+    }
+
+    return json(res, 404, { ok: false, code: 'NOT_FOUND', message: 'Unknown endpoint' })
+  } catch (error) {
+    console.error('Unhandled Vercel merchant error:', error)
+    const message = error instanceof Error ? error.message : String(error)
+    return json(res, 500, { ok: false, code: 'UNHANDLED', message })
   }
-
-  if (pathname === '/api/capabilities') {
-    if (req.method !== 'GET') return badMethod(res)
-    return json(res, 200, capabilitiesJson(baseUrl))
-  }
-
-  if (pathname === '/.well-known/tempo-agent-payments.json') {
-    if (req.method !== 'GET') return badMethod(res)
-    return json(res, 200, capabilitiesJson(baseUrl))
-  }
-
-  if (pathname === '/api/listings') {
-    if (req.method !== 'GET') return badMethod(res)
-    return json(res, 200, LISTINGS)
-  }
-
-  if (pathname === '/api/schemas/invoice-v1') {
-    return handleSchema(req, res)
-  }
-
-  if (pathname === '/api/invoices') {
-    return handleInvoices(req, res, baseUrl)
-  }
-
-  const invoiceMatch = pathname.match(/^\\/api\\/invoices\\/([^/]+)$/)
-  if (invoiceMatch) {
-    return handleInvoiceLookup(req, res, invoiceMatch[1]!)
-  }
-
-  if (pathname === '/api/demo/confirm') {
-    return handleDemoConfirm(req, res)
-  }
-
-  // Keep the standard endpoint present even for demo-only deployments.
-  if (pathname === '/api/confirm' || pathname === '/api/settlements/confirm') {
-    return json(res, 501, {
-      ok: false,
-      code: 'CONFIRM_NOT_IMPLEMENTED_ON_VERCEL',
-      message: 'Use /api/demo/confirm for the hackathon demo deployment.',
-    })
-  }
-
-  return json(res, 404, { ok: false, code: 'NOT_FOUND', message: 'Unknown endpoint' })
 }
