@@ -46,6 +46,7 @@ const UI_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../ui
 const CHAT_UI_PATH = path.join(UI_DIR, 'chat.html')
 const RECEIPT_UI_PATH = path.join(UI_DIR, 'receipt.html')
 const IS_VERCEL_RUNTIME = process.env.VERCEL === '1' || process.env.VERCEL === 'true'
+const EXPLICIT_MERCHANT_BASE_URL = process.env.MERCHANT_BASE_URL?.trim()
 
 function parsePositiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -625,22 +626,43 @@ async function issueInvoice(input: ResolvedInvoiceInput, payer?: `0x${string}`) 
 }
 
 function buildCapabilities() {
-  return merchantSdk.buildCapabilities({
+  const capabilities = merchantSdk.buildCapabilities({
     confirmSettlementPath: '/api/confirm',
     createInvoicePath: '/api/invoices',
     getInvoicePath: '/api/invoices/{invoiceId}',
     listOfferingsPath: '/api/listings',
     schemaPath: '/api/schemas/invoice-v1',
   })
+
+  return capabilities
+}
+
+function resolveBaseUrl(c: Context): string {
+  if (EXPLICIT_MERCHANT_BASE_URL) return EXPLICIT_MERCHANT_BASE_URL
+  return new URL(c.req.url).origin
+}
+
+function buildCapabilitiesForRequest(c: Context) {
+  const baseUrl = resolveBaseUrl(c)
+  const capabilities = buildCapabilities()
+
+  capabilities.invoice.schema = `${baseUrl}/api/schemas/invoice-v1`
+  capabilities.endpoints.createInvoice = `${baseUrl}/api/invoices`
+  capabilities.endpoints.getInvoice = `${baseUrl}/api/invoices/{invoiceId}`
+  capabilities.endpoints.confirmSettlement = `${baseUrl}/api/confirm`
+  capabilities.endpoints.listOfferings = `${baseUrl}/api/listings`
+
+  return capabilities
 }
 
 function serveUiTemplate(c: Context, templatePath: string) {
   try {
     const template = fs.readFileSync(templatePath, 'utf8')
+    const merchantBaseUrl = resolveBaseUrl(c)
     const guardianBaseUrl =
-      process.env.GUARDIAN_URL ?? (IS_VERCEL_RUNTIME ? MERCHANT_BASE_URL : 'http://localhost:3001')
+      process.env.GUARDIAN_URL ?? (IS_VERCEL_RUNTIME ? merchantBaseUrl : 'http://localhost:3001')
     const html = template
-      .replaceAll('__MERCHANT_BASE_URL__', MERCHANT_BASE_URL)
+      .replaceAll('__MERCHANT_BASE_URL__', merchantBaseUrl)
       .replaceAll('__GUARDIAN_BASE_URL__', guardianBaseUrl)
     return c.html(html)
   } catch (error) {
@@ -661,11 +683,11 @@ app.get('/demo', (c) => c.redirect('/'))
 app.get('/receipt', (c) => serveUiTemplate(c, RECEIPT_UI_PATH))
 
 app.get('/.well-known/tempo-agent-payments.json', (c) => {
-  return c.json(buildCapabilities())
+  return c.json(buildCapabilitiesForRequest(c))
 })
 
 app.get('/api/capabilities', (c) => {
-  return c.json(buildCapabilities())
+  return c.json(buildCapabilitiesForRequest(c))
 })
 
 app.get('/api/health', (c) => {
