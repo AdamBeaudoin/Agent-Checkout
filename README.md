@@ -202,18 +202,3 @@ curl -X POST http://localhost:3001/api/delegations \
   "merchantSig": "0x..."
 }
 ```
-
-## Demo script (2-3 minutes)
-
-1. Show `POST /api/invoices` returns signed invoice.
-2. Show policy from `GET /api/delegations/:owner`.
-3. Run `npm run agent` and show it validates then pays.
-4. Show merchant confirms using on-chain event match (not just tx success).
-5. Repeat with too-high `maxAmount` policy to show safe rejection.
-
-## Time-boxed shipping plan (5 hours)
-
-1. Deploy merchant + guardian + agent to a single host (or local recording) and verify end-to-end flow.
-2. Record one happy-path run and one rejected-policy run.
-3. Add a minimal UI if time remains; otherwise ship API demo + short CLI walkthrough.
-4. Publish repo + README + architecture screenshot.
