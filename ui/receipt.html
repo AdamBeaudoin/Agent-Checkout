@@ -225,7 +225,14 @@
     </main>
 
     <script>
-      const MERCHANT_BASE_URL = '__MERCHANT_BASE_URL__'
+      function resolvedBaseUrl(injectedValue) {
+        if (typeof injectedValue !== 'string') return window.location.origin
+        if (injectedValue.startsWith('__')) return window.location.origin
+        if (injectedValue.trim().length === 0) return window.location.origin
+        return injectedValue
+      }
+
+      const MERCHANT_BASE_URL = resolvedBaseUrl('__MERCHANT_BASE_URL__')
       const TIMELINE = [
         { id: 'intent', label: 'User intent captured' },
         { id: 'selection', label: 'Listing selected' },

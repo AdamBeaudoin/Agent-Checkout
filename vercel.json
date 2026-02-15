@@ -4,12 +4,36 @@
     {
       "src": "merchant/server.ts",
       "use": "@vercel/node"
+    },
+    {
+      "src": "ui/*.html",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/api/(.*)",
       "dest": "merchant/server.ts"
+    },
+    {
+      "src": "/\\.well-known/(.*)",
+      "dest": "merchant/server.ts"
+    },
+    {
+      "src": "/demo",
+      "dest": "/"
+    },
+    {
+      "src": "/receipt",
+      "dest": "ui/receipt.html"
+    },
+    {
+      "src": "/",
+      "dest": "ui/chat.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/"
     }
   ]
 }
