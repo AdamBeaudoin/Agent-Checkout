@@ -1,5 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { ALPHA_USD, CHAIN_ID, EXPLORER_URL } from '../shared/constants.js'
+
+// NOTE: Keep this file self-contained for Vercel. Importing local TS modules using `.js`
+// specifiers can cause runtime failures in Vercel's Node function environment.
+const ALPHA_USD = '0x20c0000000000000000000000000000000000001' as const
+const EXPLORER_URL = 'https://explore.moderato.tempo.xyz'
+const CHAIN_ID = 42431
 
 type Listing = {
   id: string
@@ -100,6 +105,49 @@ const LISTINGS: Listing[] = [
     description: 'Quiet studio with private garden and late self check-in',
   },
 ]
+
+function createInvoiceMemo(invoiceId: string): `0x${string}` {
+  // Encode invoiceId as UTF-8 hex and pad/truncate to 32 bytes.
+  const hex = Buffer.from(invoiceId, 'utf8').toString('hex')
+  const padded = (hex + '0'.repeat(64)).slice(0, 64)
+  return `0x${padded}` as `0x${string}`
+}
+
+function canonicalStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalStringify(item)).join(',')}]`
+  }
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a.localeCompare(b),
+    )
+    return `{${entries
+      .map(([key, itemValue]) => `${JSON.stringify(key)}:${canonicalStringify(itemValue)}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value)
+}
+
+function createInvoiceMessage(invoice: Omit<InvoiceV1, 'merchantSig'>): string {
+  return [
+    invoice.version,
+    invoice.invoiceId,
+    String(invoice.issuedAt),
+    String(invoice.dueAt),
+    String(invoice.chainId),
+    invoice.merchant.toLowerCase(),
+    invoice.recipient.toLowerCase(),
+    (invoice.payer ?? '').toLowerCase(),
+    invoice.token.toLowerCase(),
+    invoice.amount,
+    invoice.memo.toLowerCase(),
+    invoice.description,
+    invoice.merchantReference ?? '',
+    invoice.purpose ?? '',
+    canonicalStringify(invoice.lineItems ?? []),
+    canonicalStringify(invoice.metadata ?? {}),
+  ].join('|')
+}
 
 function setCors(res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -315,12 +363,8 @@ async function handleInvoices(req: VercelRequest, res: VercelResponse, baseUrl: 
   const now = Math.floor(Date.now() / 1000)
   const invoiceId = randomId()
 
-  // Lazy-load signing + memo helpers only on invoice creation.
-  const [{ privateKeyToAccount }, { createInvoiceMemo, signInvoice, assertInvoiceV1 }] = await Promise.all([
-    import('viem/accounts'),
-    import('../shared/invoice.js'),
-  ])
-
+  // Lazy-load viem only on invoice creation.
+  const { privateKeyToAccount } = await import('viem/accounts')
   const signer = privateKeyToAccount(merchantEnv.merchantPrivateKey)
 
   const unsigned = {
@@ -345,8 +389,8 @@ async function handleInvoices(req: VercelRequest, res: VercelResponse, baseUrl: 
     },
   }
 
-  const invoice = (await signInvoice(signer, unsigned)) as InvoiceV1
-  assertInvoiceV1(invoice)
+  const merchantSig = await signer.signMessage({ message: createInvoiceMessage(unsigned as any) })
+  const invoice = { ...(unsigned as any), merchantSig } as InvoiceV1
 
   orders.set(invoice.invoiceId, {
     status: 'pending',
@@ -443,8 +487,46 @@ async function handleDemoConfirm(req: VercelRequest, res: VercelResponse) {
 
 async function handleSchema(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return badMethod(res)
-  const { INVOICE_V1_JSON_SCHEMA } = await import('../shared/invoice.js')
-  return json(res, 200, INVOICE_V1_JSON_SCHEMA)
+  // Minimal schema for agents to validate shape quickly (MVP).
+  return json(res, 200, {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    title: 'Tempo Agent Invoice V1',
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'version',
+      'invoiceId',
+      'issuedAt',
+      'dueAt',
+      'chainId',
+      'merchant',
+      'recipient',
+      'token',
+      'amount',
+      'memo',
+      'description',
+      'merchantSig',
+    ],
+    properties: {
+      version: { type: 'string', const: 'tempo.invoice.v1' },
+      invoiceId: { type: 'string', minLength: 1, maxLength: 128 },
+      issuedAt: { type: 'integer', minimum: 1 },
+      dueAt: { type: 'integer', minimum: 1 },
+      chainId: { type: 'integer', minimum: 1 },
+      merchant: { type: 'string', pattern: '^0x[a-fA-F0-9]{40}$' },
+      recipient: { type: 'string', pattern: '^0x[a-fA-F0-9]{40}$' },
+      payer: { type: 'string', pattern: '^0x[a-fA-F0-9]{40}$' },
+      token: { type: 'string', pattern: '^0x[a-fA-F0-9]{40}$' },
+      amount: { type: 'string', pattern: '^[0-9]+$' },
+      memo: { type: 'string', pattern: '^0x[a-fA-F0-9]{64}$' },
+      description: { type: 'string', minLength: 1, maxLength: 512 },
+      merchantReference: { type: 'string', minLength: 1, maxLength: 128 },
+      purpose: { type: 'string', minLength: 1, maxLength: 128 },
+      lineItems: { type: 'array' },
+      metadata: { type: 'object' },
+      merchantSig: { type: 'string', pattern: '^0x[a-fA-F0-9]+$' },
+    },
+  })
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -504,4 +586,3 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   return json(res, 404, { ok: false, code: 'NOT_FOUND', message: 'Unknown endpoint' })
 }
-
