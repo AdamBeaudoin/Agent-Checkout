@@ -591,15 +591,6 @@
               </svg>
             </button>
           </div>
-          <div class="composer-bottom">
-            <div class="quick-actions">
-              <button id="attachBtn" class="quick-btn" type="button">Attach</button>
-              <button id="searchBtn" class="quick-btn" type="button">Search</button>
-              <button id="studyBtn" class="quick-btn" type="button">Study</button>
-              <button id="createImageBtn" class="quick-btn" type="button">Create image</button>
-            </div>
-            <button id="micBtn" class="voice-btn" type="button" aria-label="Voice">Voice</button>
-          </div>
         </div>
       </section>
     </main>
@@ -1070,32 +1061,6 @@
           }
         })
 
-        byId('attachBtn').addEventListener('click', () => {
-          appendMessage('system', 'Attachment upload is not enabled in this demo build.')
-        })
-
-        byId('searchBtn').addEventListener('click', () => {
-          byId('chatInput').value = 'I want to go to Berlin for the first weekend in April. Can you find an Airbnb?'
-          byId('chatInput').focus()
-        })
-
-        byId('studyBtn').addEventListener('click', () => {
-          byId('chatInput').value = 'Compare option 1, option 2, and option 3 for value and location.'
-          byId('chatInput').focus()
-        })
-
-        byId('createImageBtn').addEventListener('click', () => {
-          appendMessage('system', 'Image generation is not enabled in this demo build.')
-        })
-
-        byId('micBtn').addEventListener('click', () => {
-          const text = byId('chatInput').value.trim()
-          if (text) {
-            sendCurrentInput().catch((error) => appendMessage('system', `Error: ${escapeHtml(String(error))}`))
-            return
-          }
-          appendMessage('system', 'Voice capture is mock-only in this build. Type your prompt and press Enter.')
-        })
       }
 
       function boot() {
