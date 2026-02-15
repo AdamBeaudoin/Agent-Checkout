@@ -129,7 +129,7 @@ const LISTINGS: Listing[] = [
     weekendPriceEUR: 285,
     neighborhood: 'Kreuzberg',
     imageUrl:
-      'https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=1400&q=80',
+      'https://images.unsplash.com/photo-1505692952047-1a78307da8f2?auto=format&fit=crop&w=1400&q=80',
     rating: 4.92,
     reviews: 373,
     guestFavorite: true,
@@ -144,7 +144,7 @@ const LISTINGS: Listing[] = [
     weekendPriceEUR: 420,
     neighborhood: 'Mitte',
     imageUrl:
-      'https://images.unsplash.com/photo-1507089947368-19c1da9775ae?auto=format&fit=crop&w=1400&q=80',
+      'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?auto=format&fit=crop&w=1400&q=80',
     rating: 4.88,
     reviews: 346,
     guestFavorite: true,
@@ -159,7 +159,7 @@ const LISTINGS: Listing[] = [
     weekendPriceEUR: 250,
     neighborhood: 'Neukolln',
     imageUrl:
-      'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1400&q=80',
+      'https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&w=1400&q=80',
     rating: 4.97,
     reviews: 255,
     guestFavorite: true,
