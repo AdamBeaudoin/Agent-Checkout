@@ -6,11 +6,19 @@
       "use": "@vercel/node"
     },
     {
+      "src": "api/ping.ts",
+      "use": "@vercel/node"
+    },
+    {
       "src": "ui/*.html",
       "use": "@vercel/static"
     }
   ],
   "routes": [
+    {
+      "src": "/api/ping",
+      "dest": "api/ping.ts"
+    },
     {
       "src": "/api/(.*)",
       "dest": "merchant/server.ts"
