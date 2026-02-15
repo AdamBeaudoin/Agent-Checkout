@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
+import { handle } from 'hono/vercel'
 import { isAddress } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import fs from 'fs'
@@ -44,6 +45,7 @@ const MAX_DUE_IN_SECONDS = 30 * 24 * 60 * 60
 const UI_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../ui')
 const CHAT_UI_PATH = path.join(UI_DIR, 'chat.html')
 const RECEIPT_UI_PATH = path.join(UI_DIR, 'receipt.html')
+const IS_VERCEL_RUNTIME = process.env.VERCEL === '1' || process.env.VERCEL === 'true'
 
 function parsePositiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name]
@@ -635,9 +637,11 @@ function buildCapabilities() {
 function serveUiTemplate(c: Context, templatePath: string) {
   try {
     const template = fs.readFileSync(templatePath, 'utf8')
+    const guardianBaseUrl =
+      process.env.GUARDIAN_URL ?? (IS_VERCEL_RUNTIME ? MERCHANT_BASE_URL : 'http://localhost:3001')
     const html = template
       .replaceAll('__MERCHANT_BASE_URL__', MERCHANT_BASE_URL)
-      .replaceAll('__GUARDIAN_BASE_URL__', process.env.GUARDIAN_URL ?? 'http://localhost:3001')
+      .replaceAll('__GUARDIAN_BASE_URL__', guardianBaseUrl)
     return c.html(html)
   } catch (error) {
     return c.text(
@@ -662,6 +666,14 @@ app.get('/.well-known/tempo-agent-payments.json', (c) => {
 
 app.get('/api/capabilities', (c) => {
   return c.json(buildCapabilities())
+})
+
+app.get('/api/health', (c) => {
+  return c.json({
+    ok: true,
+    policyCount: 1,
+    mode: 'embedded',
+  })
 })
 
 app.get('/api/schemas/invoice-v1', (c) => {
@@ -1046,11 +1058,16 @@ app.get('/api/order/:orderId', (c) => {
 })
 
 const port = Number(process.env.MERCHANT_PORT ?? 3000)
-console.log(`Merchant listening on http://localhost:${port}`)
-console.log(`Payments go to ${MERCHANT_ADDRESS}`)
-if (MERCHANT_CONFIRM_TOKEN) {
-  console.log('Settlement confirmation auth enabled (x-merchant-confirm-token required).')
-} else {
-  console.warn('Settlement confirmation auth disabled (set MERCHANT_CONFIRM_TOKEN to enable).')
+
+if (!IS_VERCEL_RUNTIME) {
+  console.log(`Merchant listening on http://localhost:${port}`)
+  console.log(`Payments go to ${MERCHANT_ADDRESS}`)
+  if (MERCHANT_CONFIRM_TOKEN) {
+    console.log('Settlement confirmation auth enabled (x-merchant-confirm-token required).')
+  } else {
+    console.warn('Settlement confirmation auth disabled (set MERCHANT_CONFIRM_TOKEN to enable).')
+  }
+  serve({ fetch: app.fetch, port })
 }
-serve({ fetch: app.fetch, port })
+
+export default handle(app)

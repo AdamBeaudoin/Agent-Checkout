@@ -16,10 +16,17 @@ export function loadJsonState<T>(filePath: string, fallback: T): T {
 }
 
 export function saveJsonState(filePath: string, data: unknown) {
-  const directory = path.dirname(filePath)
-  fs.mkdirSync(directory, { recursive: true })
+  try {
+    const directory = path.dirname(filePath)
+    fs.mkdirSync(directory, { recursive: true })
 
-  const tempPath = `${filePath}.tmp`
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8')
-  fs.renameSync(tempPath, filePath)
+    const tempPath = `${filePath}.tmp`
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf8')
+    fs.renameSync(tempPath, filePath)
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException
+    console.warn(
+      `State persistence skipped for ${filePath}: ${err.code ?? 'UNKNOWN'} (${err.message})`,
+    )
+  }
 }
