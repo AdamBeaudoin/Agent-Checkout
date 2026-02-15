@@ -5,6 +5,13 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 const ALPHA_USD = '0x20c0000000000000000000000000000000000001' as const
 const EXPLORER_URL = 'https://explore.moderato.tempo.xyz'
 const CHAIN_ID = 42431
+const IS_VERCEL_RUNTIME = process.env.VERCEL === '1' || process.env.VERCEL === 'true'
+
+// Demo merchant identity used when MERCHANT_* env vars are not set in a Vercel demo deployment.
+// This key is public and MUST NOT be used with real funds.
+const DEMO_MERCHANT_PRIVATE_KEY =
+  '0x2b5ad5c4795c026514f8317c7a215e218dccd6cf5b4c0bcd3a3e8fbbd71b93ed' as const
+const DEMO_MERCHANT_ADDRESS = '0x3E94EE5c345f3F1f0fBd2DfC6fCF9FE0520b392C' as const
 
 type Listing = {
   id: string
@@ -191,9 +198,31 @@ function requireMerchantEnv() {
   const merchantPrivateKey = process.env.MERCHANT_PRIVATE_KEY as `0x${string}` | undefined
 
   if (!/^0x[a-fA-F0-9]{40}$/.test(merchantAddress)) {
+    const allowDemoKeyFallback =
+      process.env.ALLOW_DEMO_MERCHANT_KEY !== undefined
+        ? process.env.ALLOW_DEMO_MERCHANT_KEY === 'true'
+        : IS_VERCEL_RUNTIME
+    if (allowDemoKeyFallback) {
+      return {
+        ok: true as const,
+        merchantAddress: DEMO_MERCHANT_ADDRESS as `0x${string}`,
+        merchantPrivateKey: DEMO_MERCHANT_PRIVATE_KEY as `0x${string}`,
+      }
+    }
     return { ok: false as const, error: 'Missing/invalid MERCHANT_ADDRESS' }
   }
   if (!merchantPrivateKey || !/^0x[a-fA-F0-9]{64}$/.test(merchantPrivateKey)) {
+    const allowDemoKeyFallback =
+      process.env.ALLOW_DEMO_MERCHANT_KEY !== undefined
+        ? process.env.ALLOW_DEMO_MERCHANT_KEY === 'true'
+        : IS_VERCEL_RUNTIME
+    if (allowDemoKeyFallback) {
+      return {
+        ok: true as const,
+        merchantAddress: DEMO_MERCHANT_ADDRESS as `0x${string}`,
+        merchantPrivateKey: DEMO_MERCHANT_PRIVATE_KEY as `0x${string}`,
+      }
+    }
     return { ok: false as const, error: 'Missing/invalid MERCHANT_PRIVATE_KEY' }
   }
 
@@ -234,8 +263,10 @@ async function readJsonBody(req: VercelRequest) {
 }
 
 function capabilitiesJson(baseUrl: string) {
-  const merchantAddress = (process.env.MERCHANT_ADDRESS ??
-    '0x0000000000000000000000000000000000000000') as `0x${string}`
+  const merchantEnv = requireMerchantEnv()
+  const merchantAddress = merchantEnv.ok
+    ? merchantEnv.merchantAddress
+    : ('0x0000000000000000000000000000000000000000' as `0x${string}`)
 
   return {
     standard: 'tempo.agent-payments.v1',
@@ -434,7 +465,7 @@ async function handleDemoConfirm(req: VercelRequest, res: VercelResponse) {
   const allowDemo =
     process.env.ALLOW_DEMO_CONFIRM !== undefined
       ? process.env.ALLOW_DEMO_CONFIRM === 'true'
-      : process.env.NODE_ENV !== 'production'
+      : IS_VERCEL_RUNTIME || process.env.NODE_ENV !== 'production'
   if (!allowDemo) {
     return json(res, 401, {
       ok: false,
