@@ -25,7 +25,8 @@ const TIP20_TRANSFER_WITH_MEMO_ABI = [
       { indexed: true, name: 'from', type: 'address' },
       { indexed: true, name: 'to', type: 'address' },
       { indexed: false, name: 'amount', type: 'uint256' },
-      { indexed: false, name: 'memo', type: 'bytes32' },
+      // Memo is indexed on-chain (it appears as topic[3] on Moderato).
+      { indexed: true, name: 'memo', type: 'bytes32' },
     ],
     anonymous: false,
   },

@@ -1177,9 +1177,13 @@
           thinking.remove()
 
           if (!response.ok || !body || body.ok !== true) {
+            const details =
+              body && typeof body === 'object'
+                ? `${body.code ? ` ${body.code}` : ''}${body.message ? `: ${body.message}` : ''}`
+                : ''
             appendMessage(
               'system',
-              `Merchant confirmation failed (${response.status}). This checkout will not be marked complete.`,
+              `Merchant confirmation failed (${response.status}).${details} This checkout will not be marked complete.`,
             )
             return
           }
