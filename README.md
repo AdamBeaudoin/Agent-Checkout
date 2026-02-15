@@ -129,13 +129,12 @@ npm run agent
 ```
 
 Open the demo UI at:
-- `http://localhost:3000/`
-- `http://localhost:3000/demo`
-- `http://localhost:3000/receipt`
+- `https://agent-checkout.vercel.app/`
+
 
 The demo UI now includes a chat-first journey:
-1. User asks for a stay in natural language.
-2. Agent suggests listings and asks for confirmation.
+1. User asks for a stay in Berlin natural language.
+2. Agent suggests flat listings and asks for confirmation.
 3. Agent requests spend approval from a mock Privy wallet panel.
 4. Checkout completes through demo settlement (`POST /api/demo/confirm`).
 
