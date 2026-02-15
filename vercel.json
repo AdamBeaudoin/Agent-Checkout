@@ -6,7 +6,23 @@
       "use": "@vercel/node"
     },
     {
-      "src": "api/merchant.ts",
+      "src": "api/health.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/listings.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/capabilities.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/schemas-invoice-v1.ts",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "api/invoices.ts",
       "use": "@vercel/node"
     },
     {
@@ -20,12 +36,40 @@
       "dest": "api/ping.ts"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "api/merchant.ts"
+      "src": "/api/health",
+      "dest": "api/health.ts"
     },
     {
-      "src": "/\\.well-known/(.*)",
-      "dest": "api/merchant.ts"
+      "src": "/api/listings",
+      "dest": "api/listings.ts"
+    },
+    {
+      "src": "/api/capabilities",
+      "dest": "api/capabilities.ts"
+    },
+    {
+      "src": "/\\.well-known/tempo-agent-payments\\.json",
+      "dest": "api/capabilities.ts"
+    },
+    {
+      "src": "/api/schemas/invoice-v1",
+      "dest": "api/schemas-invoice-v1.ts"
+    },
+    {
+      "src": "/api/invoices$",
+      "dest": "api/invoices.ts"
+    },
+    {
+      "src": "/api/invoices/([^/]+)$",
+      "dest": "api/invoices.ts?invoiceId=$1"
+    },
+    {
+      "src": "/api/demo/confirm$",
+      "dest": "api/invoices.ts?demoConfirm=1"
+    },
+    {
+      "src": "/api/confirm$",
+      "dest": "api/invoices.ts?confirm=1"
     },
     {
       "src": "/demo",

@@ -850,6 +850,8 @@
           method: 'POST',
           headers: {
             'content-type': 'application/json',
+            // Lets the Vercel demo run even if the merchant key isn't configured in env vars.
+            'x-demo-mode': 'true',
           },
           body: JSON.stringify({
             listingId: state.selectedListing.id,
