@@ -574,8 +574,8 @@
           </div>
         </div>
         <div id="walletControlsPanel" class="controls-panel">
-          <button id="connectBtn" type="button" class="primary">Connect Privy (mock)</button>
-          <button id="topupBtn" type="button" class="warn">Top up 200 AlphaUSD</button>
+          <button id="connectBtn" type="button" class="primary">Connect Wallet</button>
+          <button id="disconnectBtn" type="button" class="warn" style="display:none">Disconnect</button>
         </div>
         <div id="chatFeed" class="feed"></div>
       </section>
@@ -595,7 +595,49 @@
       </section>
     </main>
 
-    <script>
+    <script type="module">
+      import { encodeFunctionData, decodeFunctionResult, createPublicClient, http, formatUnits, parseUnits, toHex, stringToHex } from 'https://esm.sh/viem@2.29.0'
+
+      // ── Chain & Contract Constants ──
+      const TEMPO_MODERATO = {
+        id: 42431,
+        name: 'Tempo Moderato',
+        nativeCurrency: { name: 'TEMPO', symbol: 'TEMPO', decimals: 18 },
+        rpcUrls: { default: { http: ['https://rpc.moderato.tempo.xyz'] } },
+        blockExplorers: { default: { name: 'Tempo Explorer', url: 'https://explore.moderato.tempo.xyz' } },
+      }
+      const ALPHA_USD = '0x20c0000000000000000000000000000000000001'
+      const RPC_URL = 'https://rpc.moderato.tempo.xyz'
+      const EXPLORER_URL = 'https://explore.moderato.tempo.xyz'
+
+      const TIP20_ABI = [
+        {
+          name: 'balanceOf',
+          type: 'function',
+          stateMutability: 'view',
+          inputs: [{ type: 'address', name: 'account' }],
+          outputs: [{ type: 'uint256' }],
+        },
+        {
+          name: 'transferWithMemo',
+          type: 'function',
+          stateMutability: 'nonpayable',
+          inputs: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'amount' },
+            { type: 'bytes32', name: 'memo' },
+          ],
+          outputs: [],
+        },
+      ]
+
+      // ── Public client for read-only calls ──
+      const publicClient = createPublicClient({
+        chain: TEMPO_MODERATO,
+        transport: http(RPC_URL),
+      })
+
+      // ── URL helpers ──
       function resolvedBaseUrl(injectedValue) {
         if (typeof injectedValue !== 'string') return window.location.origin
         if (injectedValue.startsWith('__')) return window.location.origin
@@ -605,11 +647,13 @@
 
       const MERCHANT_BASE_URL = resolvedBaseUrl('__MERCHANT_BASE_URL__')
       const GUARDIAN_BASE_URL = resolvedBaseUrl('__GUARDIAN_BASE_URL__')
-      const OWNER_ADDRESS = '0x8B7Dc5ade18F0B16A6214a395896e4Ee2e20739d'
 
+      // ── App State ──
       const state = {
         walletConnected: false,
-        walletBalanceEUR: 320,
+        walletAddress: null,    // connected address
+        walletProvider: null,   // window.ethereum reference
+        walletBalance: null,    // bigint in smallest units (6 decimals)
         listings: [],
         selectedListing: null,
         pending: 'none',
@@ -653,8 +697,9 @@
         appendMessage('user', escapeHtml(text))
       }
 
-      function formatBalance(value) {
-        return `${Number(value).toFixed(0)} AlphaUSD`
+      function formatBalance(balanceBigInt) {
+        if (balanceBigInt === null || balanceBigInt === undefined) return '— AlphaUSD'
+        return `${Number(formatUnits(balanceBigInt, 6)).toFixed(2)} AlphaUSD`
       }
 
       function nightLabel(nights) {
@@ -668,8 +713,131 @@
 
       function updateWalletUi() {
         setDot(byId('walletDot'), state.walletConnected)
-        byId('walletStatus').textContent = state.walletConnected ? 'Wallet connected' : 'Wallet disconnected'
-        byId('walletBalance').textContent = `Balance: ${formatBalance(state.walletBalanceEUR)}`
+        byId('walletStatus').textContent = state.walletConnected
+          ? `Wallet ${state.walletAddress.slice(0, 6)}…${state.walletAddress.slice(-4)}`
+          : 'Wallet disconnected'
+        byId('walletBalance').textContent = `Balance: ${formatBalance(state.walletBalance)}`
+
+        // Update button states
+        const connectBtn = byId('connectBtn')
+        const disconnectBtn = byId('disconnectBtn')
+        if (state.walletConnected) {
+          connectBtn.style.display = 'none'
+          disconnectBtn.style.display = ''
+        } else {
+          connectBtn.style.display = ''
+          disconnectBtn.style.display = 'none'
+        }
+      }
+
+      // ── Wallet: read AlphaUSD balance ──
+      async function refreshBalance() {
+        if (!state.walletAddress) {
+          state.walletBalance = null
+          return
+        }
+        try {
+          const data = encodeFunctionData({
+            abi: TIP20_ABI,
+            functionName: 'balanceOf',
+            args: [state.walletAddress],
+          })
+          const result = await publicClient.call({
+            to: ALPHA_USD,
+            data,
+          })
+          const decoded = decodeFunctionResult({
+            abi: TIP20_ABI,
+            functionName: 'balanceOf',
+            data: result.data,
+          })
+          state.walletBalance = decoded
+        } catch (err) {
+          console.error('Balance fetch failed:', err)
+          state.walletBalance = null
+        }
+      }
+
+      // ── Wallet: connect via window.ethereum (MetaMask etc.) ──
+      async function connectWallet() {
+        if (!window.ethereum) {
+          appendMessage('system', 'No wallet detected. Please install MetaMask or another EIP-1193 wallet.')
+          return
+        }
+
+        try {
+          // Request accounts
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
+          if (!accounts || accounts.length === 0) {
+            appendMessage('system', 'Wallet connection rejected.')
+            return
+          }
+
+          state.walletAddress = accounts[0]
+          state.walletProvider = window.ethereum
+
+          // Switch/add Tempo Moderato chain
+          try {
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0x' + TEMPO_MODERATO.id.toString(16) }],
+            })
+          } catch (switchErr) {
+            // 4902 = chain not added yet
+            if (switchErr.code === 4902) {
+              await window.ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [{
+                  chainId: '0x' + TEMPO_MODERATO.id.toString(16),
+                  chainName: 'Tempo Moderato',
+                  nativeCurrency: { name: 'TEMPO', symbol: 'TEMPO', decimals: 18 },
+                  rpcUrls: ['https://rpc.moderato.tempo.xyz'],
+                  blockExplorerUrls: ['https://explore.moderato.tempo.xyz'],
+                }],
+              })
+            } else {
+              throw switchErr
+            }
+          }
+
+          state.walletConnected = true
+          await refreshBalance()
+          updateWalletUi()
+          byId('walletControlsPanel').classList.remove('open')
+          appendMessage('system', `Wallet connected: ${state.walletAddress.slice(0, 6)}…${state.walletAddress.slice(-4)} on Tempo Moderato`)
+        } catch (err) {
+          console.error('Wallet connection failed:', err)
+          appendMessage('system', `Wallet connection failed: ${escapeHtml(err.message || String(err))}`)
+        }
+      }
+
+      function disconnectWallet() {
+        state.walletConnected = false
+        state.walletAddress = null
+        state.walletProvider = null
+        state.walletBalance = null
+        updateWalletUi()
+        byId('walletControlsPanel').classList.remove('open')
+        appendMessage('system', 'Wallet disconnected.')
+      }
+
+      // ── Listen for account/chain changes ──
+      if (window.ethereum) {
+        window.ethereum.on('accountsChanged', async (accounts) => {
+          if (accounts.length === 0) {
+            disconnectWallet()
+          } else {
+            state.walletAddress = accounts[0]
+            await refreshBalance()
+            updateWalletUi()
+          }
+        })
+        window.ethereum.on('chainChanged', async () => {
+          if (state.walletConnected) {
+            await refreshBalance()
+            updateWalletUi()
+          }
+        })
       }
 
       async function api(base, path, options = {}) {
@@ -747,7 +915,7 @@
         const merchantName = invoice.metadata?.listingTitle
           ? `Airbnb Host (${escapeHtml(invoice.metadata.listingTitle)})`
           : 'Airbnb Host'
-        const explorerLink = `https://explore.moderato.tempo.xyz/address/${invoice.recipient}`
+        const explorerLink = `${EXPLORER_URL}/address/${invoice.recipient}`
 
         return `
           <div class="permission">
@@ -763,12 +931,6 @@
             </div>
           </div>
         `
-      }
-
-      function randomTxHash() {
-        const bytes = new Uint8Array(32)
-        crypto.getRandomValues(bytes)
-        return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`
       }
 
       function parseIntent(text) {
@@ -846,16 +1008,17 @@
           return null
         }
 
+        const payerAddress = state.walletAddress || '0x0000000000000000000000000000000000000000'
+
         const { response, body } = await api(MERCHANT_BASE_URL, '/api/invoices', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            // Lets the Vercel demo run even if the merchant key isn't configured in env vars.
             'x-demo-mode': 'true',
           },
           body: JSON.stringify({
             listingId: state.selectedListing.id,
-            payer: OWNER_ADDRESS,
+            payer: payerAddress,
           }),
         })
 
@@ -879,69 +1042,107 @@
         state.pending = 'approve'
       }
 
+      // ── Real on-chain payment via transferWithMemo ──
       async function executePayment() {
         if (!state.lastInvoice || !state.selectedListing) {
           appendMessage('system', 'Missing invoice context.')
           return
         }
 
-        if (!state.walletConnected) {
-          appendMessage('agent', 'Please connect your Privy wallet first, then press approve again.')
+        if (!state.walletConnected || !state.walletProvider) {
+          appendMessage('agent', 'Please connect your wallet first (MetaMask or similar), then press approve again.')
           return
         }
 
-        const spend = Number(state.selectedListing.weekendPriceEUR)
-        if (state.walletBalanceEUR < spend) {
-          appendMessage('agent', `Insufficient wallet balance. Need ${spend.toFixed(0)} AlphaUSD.`)
+        // Check balance
+        const spend = BigInt(state.lastInvoice.amount) // already in smallest units (6 decimals)
+        if (state.walletBalance !== null && state.walletBalance < spend) {
+          const needed = formatUnits(spend, 6)
+          const have = formatUnits(state.walletBalance, 6)
+          appendMessage('agent', `Insufficient AlphaUSD balance. Need ${needed}, have ${have}. Fund your wallet on the <a class="link" href="https://faucet.moderato.tempo.xyz" target="_blank" rel="noreferrer">Tempo faucet</a>.`)
           return
         }
 
         const thinking = createThinkingMessage()
-        await new Promise((resolve) => setTimeout(resolve, 900))
 
-        const txHash = randomTxHash()
-        const { response, body } = await api(MERCHANT_BASE_URL, '/api/demo/confirm', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-demo-mode': 'true',
-          },
-          body: JSON.stringify({
-            invoiceId: state.lastInvoice.invoiceId,
-            txHash,
-          }),
-        })
+        try {
+          // Encode transferWithMemo(to, amount, memo)
+          const memo = state.lastInvoice.memo || '0x0000000000000000000000000000000000000000000000000000000000000000'
+          const data = encodeFunctionData({
+            abi: TIP20_ABI,
+            functionName: 'transferWithMemo',
+            args: [
+              state.lastInvoice.recipient,
+              spend,
+              memo,
+            ],
+          })
 
-        thinking.remove()
+          // Send real transaction via wallet
+          const txHash = await state.walletProvider.request({
+            method: 'eth_sendTransaction',
+            params: [{
+              from: state.walletAddress,
+              to: ALPHA_USD,
+              data,
+            }],
+          })
 
-        if (!response.ok) {
-          appendMessage('system', `Payment simulation failed (${response.status}).`)
-          return
+          // Confirm with merchant backend
+          const { response, body } = await api(MERCHANT_BASE_URL, '/api/demo/confirm', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-demo-mode': 'true',
+            },
+            body: JSON.stringify({
+              invoiceId: state.lastInvoice.invoiceId,
+              txHash,
+            }),
+          })
+
+          thinking.remove()
+
+          if (!response.ok) {
+            appendMessage('system', `Merchant confirmation failed (${response.status}), but the on-chain tx was sent.`)
+          }
+
+          // Refresh balance after payment
+          await refreshBalance()
+          updateWalletUi()
+
+          const explorerTxLink = `${EXPLORER_URL}/tx/${txHash}`
+
+          const receipt = {
+            createdAt: new Date().toISOString(),
+            listing: state.selectedListing,
+            invoice: state.lastInvoice,
+            confirmation: body || { txHash },
+            wallet: {
+              connected: state.walletConnected,
+              address: state.walletAddress,
+            },
+          }
+
+          localStorage.setItem('tempo_demo_receipt', JSON.stringify(receipt))
+
+          appendMessage(
+            'agent',
+            `Done! Booking completed with a real on-chain payment.<br/><br/>Tx: <a class="link" href="${explorerTxLink}" target="_blank" rel="noreferrer"><code>${escapeHtml(txHash)}</code></a><br/>Next: review proof on the receipt page.<br/><br/><a class="link" href="/receipt">Open receipt page</a>`,
+          )
+
+          appendMessage('agent', 'Follow-up: do you want me to send check-in instructions and transit options too?')
+          state.pending = 'followup'
+        } catch (err) {
+          thinking.remove()
+          console.error('Payment failed:', err)
+
+          if (err.code === 4001) {
+            appendMessage('system', 'Transaction rejected in wallet.')
+          } else {
+            appendMessage('system', `Payment failed: ${escapeHtml(err.message || String(err))}`)
+          }
         }
-
-        state.walletBalanceEUR -= spend
-        updateWalletUi()
-
-        const receipt = {
-          createdAt: new Date().toISOString(),
-          listing: state.selectedListing,
-          invoice: state.lastInvoice,
-          confirmation: body,
-          wallet: {
-            connected: state.walletConnected,
-            remainingBalanceEUR: state.walletBalanceEUR,
-          },
-        }
-
-        localStorage.setItem('tempo_demo_receipt', JSON.stringify(receipt))
-
-        appendMessage(
-          'agent',
-          `Done. Booking completed and payment confirmed.<br/><br/>Tx: <code>${escapeHtml(body.txHash)}</code><br/>Next: review proof on the receipt page.<br/><br/><a class="link" href="/receipt">Open receipt page</a>`,
-        )
-
-        appendMessage('agent', 'Follow-up: do you want me to send check-in instructions and transit options too?')
-        state.pending = 'followup'
       }
 
       function handleFollowup(text) {
@@ -1044,17 +1245,11 @@
         })
 
         byId('connectBtn').addEventListener('click', () => {
-          state.walletConnected = true
-          updateWalletUi()
-          byId('walletControlsPanel').classList.remove('open')
-          appendMessage('system', 'Privy wallet connected (mock mode).')
+          connectWallet().catch((err) => appendMessage('system', `Error: ${escapeHtml(String(err))}`))
         })
 
-        byId('topupBtn').addEventListener('click', () => {
-          state.walletBalanceEUR += 200
-          updateWalletUi()
-          byId('walletControlsPanel').classList.remove('open')
-          appendMessage('system', 'Wallet topped up by 200 AlphaUSD (simulated).')
+        byId('disconnectBtn').addEventListener('click', () => {
+          disconnectWallet()
         })
       }
 
@@ -1069,7 +1264,6 @@
             sendCurrentInput().catch((error) => appendMessage('system', `Error: ${escapeHtml(String(error))}`))
           }
         })
-
       }
 
       function boot() {
