@@ -114,6 +114,30 @@
         padding: 8px;
       }
 
+      .controls-panel .field {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .controls-panel input {
+        width: 300px;
+        max-width: 78vw;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 9px;
+        background: rgba(18, 20, 26, 0.7);
+        color: rgba(237, 241, 246, 0.92);
+        padding: 6px 10px;
+        font: inherit;
+        font-size: 0.74rem;
+        outline: none;
+      }
+
+      .controls-panel input::placeholder {
+        color: rgba(237, 241, 246, 0.56);
+      }
+
       .controls-panel.open {
         display: flex;
       }
@@ -579,9 +603,13 @@
         <div id="walletControlsPanel" class="controls-panel">
           <button id="connectBtn" type="button" class="primary">Connect Wallet</button>
           <button id="disconnectBtn" type="button" class="warn" style="display:none">Disconnect</button>
-          <a class="control-link" href="https://docs.tempo.xyz/guide/use-accounts/add-funds" target="_blank" rel="noreferrer">
-            <button type="button">Add Funds</button>
-          </a>
+          <div class="field">
+            <input id="fundAddressInput" placeholder="0x… address to fund" />
+            <button id="fundBtn" type="button">Fund AlphaUSD</button>
+            <a class="control-link" href="https://docs.tempo.xyz/guide/use-accounts/add-funds" target="_blank" rel="noreferrer">
+              <button type="button">Add Funds Docs</button>
+            </a>
+          </div>
         </div>
         <div id="chatFeed" class="feed"></div>
       </section>
@@ -724,6 +752,15 @@
           : 'Wallet disconnected'
         byId('walletBalance').textContent = `Balance: ${formatBalance(state.walletBalance)}`
 
+        const fundInput = byId('fundAddressInput')
+        if (fundInput) {
+          if (state.walletConnected && state.walletAddress) {
+            fundInput.value = state.walletAddress
+          } else if (!fundInput.value) {
+            fundInput.value = ''
+          }
+        }
+
         // Update button states
         const connectBtn = byId('connectBtn')
         const disconnectBtn = byId('disconnectBtn')
@@ -856,6 +893,28 @@
           body = { raw }
         }
         return { response, body }
+      }
+
+      async function requestFaucetFunds(address) {
+        const payload = {
+          jsonrpc: '2.0',
+          id: Math.floor(Math.random() * 1_000_000),
+          method: 'tempo_fundAddress',
+          params: [address],
+        }
+        const response = await fetch(RPC_URL, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          throw new Error(`Faucet RPC failed (${response.status})`)
+        }
+        if (data && data.error) {
+          throw new Error(data.error.message || 'Faucet RPC error')
+        }
+        return data?.result
       }
 
       async function refreshServices() {
@@ -1260,6 +1319,37 @@
       function wireTopbarActions() {
         byId('walletControlsBtn').addEventListener('click', () => {
           byId('walletControlsPanel').classList.toggle('open')
+        })
+
+        byId('fundBtn')?.addEventListener('click', async () => {
+          const raw = byId('fundAddressInput')?.value?.trim() ?? ''
+          const addr = /^0x[a-fA-F0-9]{40}$/.test(raw) ? raw : null
+          if (!addr) {
+            appendMessage('system', 'Enter a valid 0x… address to fund.')
+            return
+          }
+
+          const thinking = appendMessage('system', 'Requesting faucet funds via Tempo RPC…')
+          try {
+            const result = await requestFaucetFunds(addr)
+            thinking.remove()
+            appendMessage(
+              'system',
+              `Faucet request sent.${result ? ` Result: ${escapeHtml(String(result))}` : ''}`,
+            )
+
+            if (
+              state.walletConnected &&
+              state.walletAddress &&
+              state.walletAddress.toLowerCase() === addr.toLowerCase()
+            ) {
+              await refreshBalance()
+              updateWalletUi()
+            }
+          } catch (err) {
+            thinking.remove()
+            appendMessage('system', `Faucet failed: ${escapeHtml(err.message || String(err))}`)
+          }
         })
 
         byId('connectBtn').addEventListener('click', () => {
