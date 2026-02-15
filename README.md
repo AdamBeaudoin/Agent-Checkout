@@ -136,7 +136,7 @@ The demo UI now includes a chat-first journey:
 1. User asks for a stay in Berlin natural language.
 2. Agent suggests flat listings and asks for confirmation.
 3. Agent requests spend approval from a mock Privy wallet panel.
-4. Checkout completes through demo settlement (`POST /api/demo/confirm`).
+4. Checkout completes after an on-chain settlement is mined and verified (`POST /api/confirm` checks the receipt logs match the invoice).
 
 By default, agent execution is fail-closed if guardian policy is unavailable.
 Only set `ALLOW_LOCAL_POLICY_FALLBACK=true` for local development/testing.

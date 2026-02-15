@@ -63,6 +63,20 @@ type Order = {
   confirmedAt?: number
 }
 
+const TIP20_TRANSFER_WITH_MEMO_ABI = [
+  {
+    type: 'event',
+    name: 'TransferWithMemo',
+    inputs: [
+      { indexed: true, name: 'from', type: 'address' },
+      { indexed: true, name: 'to', type: 'address' },
+      { indexed: false, name: 'amount', type: 'uint256' },
+      { indexed: false, name: 'memo', type: 'bytes32' },
+    ],
+    anonymous: false,
+  },
+] as const
+
 const LISTINGS: Listing[] = [
   {
     id: 'cozy-loft',
@@ -165,7 +179,7 @@ function setCors(res: any) {
 
 function json(res: any, status: number, body: unknown) {
   setCors(res)
-  res.status(status).json(body)
+  return res.status(status).json(body)
 }
 
 function badMethod(res: any) {
@@ -459,6 +473,119 @@ async function handleInvoiceLookup(req: any, res: any, invoiceId: string) {
   })
 }
 
+function requireConfirmAuthOrError(req: any, res: any) {
+  const required = process.env.MERCHANT_CONFIRM_TOKEN?.trim()
+  if (!required) return undefined
+  const provided = String(req.headers['x-merchant-confirm-token'] ?? '').trim()
+  if (provided === required) return undefined
+  return json(res, 401, { ok: false, code: 'UNAUTHORIZED', message: 'Missing or invalid x-merchant-confirm-token' })
+}
+
+async function confirmSettlement(req: any, res: any, opts: { mode?: 'demo' } = {}) {
+  if (req.method !== 'POST') return badMethod(res)
+
+  const authError = requireConfirmAuthOrError(req, res)
+  if (authError) return authError
+
+  const body = await readJsonBody(req)
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json(res, 400, { ok: false, code: 'BAD_JSON', message: 'Request body must be JSON object' })
+  }
+
+  const invoiceId = typeof (body as any).invoiceId === 'string' ? (body as any).invoiceId : undefined
+  const orderId = typeof (body as any).orderId === 'string' ? (body as any).orderId : undefined
+  const txHash = typeof (body as any).txHash === 'string' ? (body as any).txHash : undefined
+  const id = invoiceId ?? orderId
+  if (!id) {
+    return json(res, 400, { ok: false, code: 'MISSING_INVOICE_ID', message: 'invoiceId or orderId required' })
+  }
+  if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
+    return json(res, 400, { ok: false, code: 'INVALID_TX_HASH', message: 'txHash must be 0x…64 hex' })
+  }
+  const txHashTyped = txHash as `0x${string}`
+
+  const { orders } = store()
+  const order = orders.get(id)
+  if (!order) return json(res, 404, { ok: false, code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' })
+
+  if (order.status === 'confirmed') {
+    if (order.txHash === txHashTyped) {
+      return json(res, 200, {
+        ok: true,
+        ...(opts.mode ? { mode: opts.mode } : {}),
+        status: 'confirmed',
+        invoiceId: order.invoice.invoiceId,
+        txHash: order.txHash,
+        idempotentReplay: true,
+      })
+    }
+
+    return json(res, 409, {
+      ok: false,
+      code: 'INVOICE_ALREADY_CONFIRMED',
+      message: 'Invoice is already confirmed with a different transaction hash.',
+      existingTxHash: order.txHash ?? 'unknown',
+    })
+  }
+
+  // Pull receipt from the Tempo Moderato RPC.
+  const rpcUrl = (process.env.RPC_URL ?? 'https://rpc.moderato.tempo.xyz').trim()
+
+  try {
+    const { createPublicClient, http, parseEventLogs } = await import('viem')
+    const publicClient = createPublicClient({ transport: http(rpcUrl) })
+
+    const receipt = await publicClient.getTransactionReceipt({ hash: txHashTyped })
+    if (receipt.status !== 'success') {
+      return json(res, 400, { ok: false, code: 'TRANSACTION_FAILED', message: 'Transaction failed' })
+    }
+
+    const transferLogs = parseEventLogs({
+      abi: TIP20_TRANSFER_WITH_MEMO_ABI,
+      logs: [...receipt.logs],
+      eventName: 'TransferWithMemo',
+    })
+
+    const expectedAmount = BigInt(order.invoice.amount)
+    const match = transferLogs.find((eventLog) => {
+      return (
+        String(eventLog.address).toLowerCase() === order.invoice.token.toLowerCase() &&
+        String(eventLog.args.to).toLowerCase() === order.invoice.recipient.toLowerCase() &&
+        eventLog.args.amount === expectedAmount &&
+        String(eventLog.args.memo).toLowerCase() === order.invoice.memo.toLowerCase() &&
+        (!order.invoice.payer || String(eventLog.args.from).toLowerCase() === order.invoice.payer.toLowerCase())
+      )
+    })
+
+    if (!match) {
+      return json(res, 400, {
+        ok: false,
+        code: 'SETTLEMENT_MISMATCH',
+        message: 'No matching TransferWithMemo event found for this invoice.',
+      })
+    }
+
+    order.status = 'confirmed'
+    order.txHash = txHashTyped
+    order.confirmedAt = Math.floor(Date.now() / 1000)
+
+    return json(res, 200, {
+      ok: true,
+      ...(opts.mode ? { mode: opts.mode } : {}),
+      status: 'confirmed',
+      invoiceId: order.invoice.invoiceId,
+      txHash,
+      idempotentReplay: false,
+    })
+  } catch {
+    return json(res, 400, {
+      ok: false,
+      code: 'TRANSACTION_NOT_FOUND_OR_INVALID',
+      message: 'Transaction not found or invalid for this invoice',
+    })
+  }
+}
+
 async function handleDemoConfirm(req: any, res: any) {
   const allowDemo =
     process.env.ALLOW_DEMO_CONFIRM !== undefined
@@ -472,46 +599,8 @@ async function handleDemoConfirm(req: any, res: any) {
     })
   }
 
-  if (req.method !== 'POST') return badMethod(res)
-  const body = await readJsonBody(req)
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return json(res, 400, { ok: false, code: 'BAD_JSON', message: 'Request body must be JSON object' })
-  }
-
-  const { orders } = store()
-  const invoiceId = typeof (body as any).invoiceId === 'string' ? (body as any).invoiceId : undefined
-  const txHash = typeof (body as any).txHash === 'string' ? (body as any).txHash : undefined
-  if (!invoiceId) return json(res, 400, { ok: false, code: 'MISSING_INVOICE_ID', message: 'invoiceId required' })
-  if (!txHash || !/^0x[a-fA-F0-9]{64}$/.test(txHash)) {
-    return json(res, 400, { ok: false, code: 'INVALID_TX_HASH', message: 'txHash must be 0x…64 hex' })
-  }
-
-  const order = orders.get(invoiceId)
-  if (!order) return json(res, 404, { ok: false, code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' })
-
-  if (order.status === 'confirmed') {
-    return json(res, 200, {
-      ok: true,
-      mode: 'demo',
-      status: 'confirmed',
-      invoiceId: order.invoice.invoiceId,
-      txHash: order.txHash,
-      idempotentReplay: true,
-    })
-  }
-
-  order.status = 'confirmed'
-  order.txHash = txHash as `0x${string}`
-  order.confirmedAt = Math.floor(Date.now() / 1000)
-
-  return json(res, 200, {
-    ok: true,
-    mode: 'demo',
-    status: 'confirmed',
-    invoiceId: order.invoice.invoiceId,
-    txHash,
-    idempotentReplay: false,
-  })
+  // Demo confirm still requires a real on-chain settlement; it only relaxes deployment ergonomics.
+  return confirmSettlement(req, res, { mode: 'demo' })
 }
 
 async function handleSchema(req: any, res: any) {
@@ -607,11 +696,7 @@ export default async function handler(req: any, res: any) {
 
     // Keep the standard endpoint present even for demo-only deployments.
     if (pathname === '/api/confirm' || pathname === '/api/settlements/confirm') {
-      return json(res, 501, {
-        ok: false,
-        code: 'CONFIRM_NOT_IMPLEMENTED_ON_VERCEL',
-        message: 'Use /api/demo/confirm for the hackathon demo deployment.',
-      })
+      return confirmSettlement(req, res)
     }
 
     return json(res, 404, { ok: false, code: 'NOT_FOUND', message: 'Unknown endpoint' })

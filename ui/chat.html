@@ -393,6 +393,7 @@
       }
 
       .utility button,
+      .controls-panel button,
       .listing-actions button,
       .permission button {
         border: 1px solid rgba(255, 255, 255, 0.16);
@@ -406,6 +407,7 @@
       }
 
       .utility button.primary,
+      .controls-panel button.primary,
       .listing-actions button.primary,
       .permission button.primary {
         background: rgba(37, 187, 144, 0.9);
@@ -414,6 +416,7 @@
       }
 
       .utility button.warn,
+      .controls-panel button.warn,
       .listing-actions button.warn,
       .permission button.warn {
         background: rgba(142, 102, 37, 0.9);
@@ -576,6 +579,9 @@
         <div id="walletControlsPanel" class="controls-panel">
           <button id="connectBtn" type="button" class="primary">Connect Wallet</button>
           <button id="disconnectBtn" type="button" class="warn" style="display:none">Disconnect</button>
+          <a class="control-link" href="https://faucet.moderato.tempo.xyz" target="_blank" rel="noreferrer">
+            <button type="button">Open Faucet</button>
+          </a>
         </div>
         <div id="chatFeed" class="feed"></div>
       </section>
@@ -1008,7 +1014,7 @@
           return null
         }
 
-        const payerAddress = state.walletAddress || '0x0000000000000000000000000000000000000000'
+        const payerAddress = state.walletConnected && state.walletAddress ? state.walletAddress : null
 
         const { response, body } = await api(MERCHANT_BASE_URL, '/api/invoices', {
           method: 'POST',
@@ -1018,7 +1024,7 @@
           },
           body: JSON.stringify({
             listingId: state.selectedListing.id,
-            payer: payerAddress,
+            ...(payerAddress ? { payer: payerAddress } : {}),
           }),
         })
 
@@ -1088,12 +1094,20 @@
             }],
           })
 
+          // Wait for confirmation so we only mark "done" after the tx is actually mined.
+          const txReceipt = await publicClient.waitForTransactionReceipt({
+            hash: txHash,
+            timeout: 120_000,
+          })
+          if (txReceipt.status !== 'success') {
+            throw new Error('Transaction reverted')
+          }
+
           // Confirm with merchant backend
-          const { response, body } = await api(MERCHANT_BASE_URL, '/api/demo/confirm', {
+          const { response, body } = await api(MERCHANT_BASE_URL, '/api/confirm', {
             method: 'POST',
             headers: {
               'content-type': 'application/json',
-              'x-demo-mode': 'true',
             },
             body: JSON.stringify({
               invoiceId: state.lastInvoice.invoiceId,
@@ -1103,8 +1117,12 @@
 
           thinking.remove()
 
-          if (!response.ok) {
-            appendMessage('system', `Merchant confirmation failed (${response.status}), but the on-chain tx was sent.`)
+          if (!response.ok || !body || body.ok !== true) {
+            appendMessage(
+              'system',
+              `Merchant confirmation failed (${response.status}). This checkout will not be marked complete.`,
+            )
+            return
           }
 
           // Refresh balance after payment

@@ -1052,56 +1052,28 @@ app.post('/api/demo/confirm', async (c) => {
     )
   }
 
+  // Optional auth gate (kept consistent with /api/confirm).
+  const authError = requireSettlementAuthOrError(c)
+  if (authError) return authError
+
   let body: {
     invoiceId?: string
+    orderId?: string
     txHash?: `0x${string}`
   }
 
   try {
     body = (await c.req.json()) as {
       invoiceId?: string
+      orderId?: string
       txHash?: `0x${string}`
     }
   } catch {
     return errorResponse(c, 400, 'BAD_JSON', 'Request body must be valid JSON')
   }
 
-  if (!body.invoiceId) {
-    return errorResponse(c, 400, 'MISSING_INVOICE_ID', 'invoiceId is required')
-  }
-
-  const order = orders.get(body.invoiceId)
-  if (!order) return errorResponse(c, 404, 'INVOICE_NOT_FOUND', 'Invoice not found')
-
-  const txHash =
-    body.txHash && /^0x[a-fA-F0-9]{64}$/.test(body.txHash)
-      ? body.txHash
-      : (`0x${'d'.repeat(64)}` as `0x${string}`)
-
-  if (order.status === 'confirmed') {
-    return c.json({
-      ok: true,
-      mode: 'demo',
-      status: 'confirmed',
-      invoiceId: order.invoice.invoiceId,
-      txHash: order.txHash,
-      idempotentReplay: true,
-    })
-  }
-
-  order.status = 'confirmed'
-  order.txHash = txHash
-  order.confirmedAt = Math.floor(Date.now() / 1000)
-  persistMerchantState()
-
-  return c.json({
-    ok: true,
-    mode: 'demo',
-    status: 'confirmed',
-    invoiceId: order.invoice.invoiceId,
-    txHash,
-    idempotentReplay: false,
-  })
+  // Demo confirm now validates against an on-chain receipt, just like /api/confirm.
+  return confirmSettlement(c, body)
 })
 
 app.post('/api/confirm', async (c) => {
